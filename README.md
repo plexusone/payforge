@@ -33,9 +33,9 @@ checkout and the customer portal, and turns a paid subscription into an
 entitlement through ports the host supplies.
 
 > **Status:** in development. The provider-neutral core and the Stripe
-> adapter's customers, plan and one-time checkout, customer portal and catalog
-> sync exist.
-> Connect, webhooks and the subscription lifecycle follow; see the
+> adapter's customers, plan and one-time checkout, customer portal, catalog
+> sync and webhook verification exist.
+> Connect and the subscription lifecycle follow; see the
 > [roadmap](docs/specs/initiatives/INIT-PAYFORGE-001/ROADMAP.md).
 
 ```go
@@ -91,6 +91,22 @@ key to it and leaves the old one for the subscribers already on it. A subject
 that already has a granting subscription is refused with
 `payforge.ErrAlreadySubscribed`, and a plan with a trial starts one without
 asking for a card.
+
+Webhooks are verified and reduced to a small event:
+
+```go
+hook := payforgestripe.Webhook{Secrets: []string{platformSecret, connectSecret}}
+
+func handle(w http.ResponseWriter, r *http.Request) {
+	ev, err := hook.Read(r) // verifies the signature; the body is limited to 1 MiB
+	if errors.Is(err, payforge.ErrSignatureInvalid) {
+		http.Error(w, "bad signature", http.StatusBadRequest)
+		return
+	}
+	// ev.Kind is a subscription, checkout, invoice, refund or account change,
+	// or payforge.EventIgnored for anything else: acknowledge it and move on.
+}
+```
 
 Everything written to the provider carries `payforge_app`, so several products
 can share one account and still be told apart.
