@@ -32,8 +32,9 @@ provider: it computes the products and prices the provider should hold, starts
 checkout and the customer portal, and turns a paid subscription into an
 entitlement through ports the host supplies.
 
-> **Status:** in development. The provider-neutral core below exists. Checkout,
-> the Stripe adapter, webhooks and the subscription lifecycle follow; see the
+> **Status:** in development. The provider-neutral core and the Stripe
+> adapter's customers, plan and one-time checkout, and customer portal exist.
+> Catalog sync, Connect, webhooks and the subscription lifecycle follow; see the
 > [roadmap](docs/specs/initiatives/INIT-PAYFORGE-001/ROADMAP.md).
 
 ```go
@@ -53,6 +54,29 @@ var billing payforge.Billing = payforge.Disabled(spec)
 // What a provider account should hold, found again by stable lookup keys.
 plan := payforge.ProviderPlanFor(spec)
 ```
+
+With a key, the Stripe adapter implements the same interface:
+
+```go
+import payforgestripe "github.com/plexusone/payforge/stripe"
+
+billing, err := payforgestripe.New(spec, payforgestripe.Config{SecretKey: key})
+if err != nil { return err }
+
+sess, err := billing.CheckoutPlan(ctx, payforge.PlanCheckout{
+	Subject:    payforge.Subject{ID: org.ID, Name: org.Name, Email: org.BillingEmail},
+	Plan:       "pro",
+	Interval:   pricingspec.IntervalMonth,
+	SuccessURL: "https://app.example.com/billing",
+	CancelURL:  "https://app.example.com/pricing",
+})
+// Send the buyer to sess.URL.
+```
+
+Prices are found by lookup key, so the catalog must be in the account. A subject
+that already has a granting subscription is refused with
+`payforge.ErrAlreadySubscribed`, and a plan with a trial starts one without
+asking for a card.
 
 Everything written to the provider carries `payforge_app`, so several products
 can share one account and still be told apart.

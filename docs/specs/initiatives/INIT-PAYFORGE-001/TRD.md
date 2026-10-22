@@ -87,7 +87,33 @@ type Billing interface {
   idempotent on it.
 - Checkout carries the subject and plan in metadata on the session and on the
   subscription, so each event can be matched without the session.
-- Return URLs are supplied by the host and carry the session ID.
+- Return URLs are supplied by the host and carry the session ID. They must be
+  absolute `http` or `https` addresses; anything else is refused before a
+  request is made.
+- `EnsureCustomer` searches the provider by the app and subject metadata, then
+  creates with an idempotency key. The provider's search can lag a creation by
+  up to a minute; the key covers that gap.
+- A plan checkout is refused with `ErrAlreadySubscribed` when the customer
+  already holds a subscription that grants (`payforge.Grants`), so two browser
+  tabs cannot bill an account twice. Its idempotency key is derived from the
+  app, subject, plan, interval and return URLs, so the same request returns
+  the same session and a different one is its own.
+- A plan with `trialDays` starts the trial without asking for a card, and the
+  subscription is canceled at the end of the trial if the buyer added none.
+- A one-time purchase of a seller-set product takes the amount from the
+  caller and refuses one under the product's minimum; a fixed product takes
+  its synced price and refuses a stray amount. A caller-supplied `Reference`
+  makes a retry return the same session.
+
+## The Stripe library
+
+The adapter uses the official `stripe-go` library rather than a client of our
+own. This is the code that gets the product paid, so the request shapes,
+retries with idempotency keys, pagination and error types are better taken from
+the maintainer than rewritten. One major version is pinned across payforge, and
+the adapter reads only a few stable fields of what comes back, so a newer API
+version on an account does not break it. Tests stand in for the API with an HTTP
+server, by pointing the library's backend at it.
 
 ## Connect (marketplace)
 
@@ -180,8 +206,10 @@ read revenue.
 
 ## Errors and secrets
 
-- Sentinel errors for the cases a host handles: not configured, unknown plan,
-  not self-serve, signature invalid, event already processed.
+- Sentinel errors for the cases a host handles: not configured, invalid subject
+  or return URL, unknown plan or product, not self-serve, no price for the
+  interval, amount below the minimum or given for a fixed price, catalog not
+  synced, already subscribed, signature invalid, event already processed.
 - Provider secret keys and webhook secrets are strings passed to constructors
   by the host and are never logged, returned or included in an error.
 - Fixtures use the provider's test mode and obviously fake identifiers.

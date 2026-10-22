@@ -39,9 +39,9 @@ configuration, other payment providers, and a command-line tool over the core.
 
 **Theme:** Checkout, the customer portal, customers, Connect, webhooks and catalog sync are extracted from the existing integration into one tested adapter.
 
-- [ ] `RMI-PAYFORGE-009` Stripe client setup, customers keyed to the host's subject, and plan and one-time checkout, with the app tag on everything written
+- [x] `RMI-PAYFORGE-009` Stripe client setup, customers keyed to the host's subject, and plan and one-time checkout, with the app tag on everything written
   - Depends on: `RMI-PAYFORGE-006`
-- [ ] `RMI-PAYFORGE-010` Customer portal sessions
+- [x] `RMI-PAYFORGE-010` Customer portal sessions
   - Depends on: `RMI-PAYFORGE-009`
 - [ ] `RMI-PAYFORGE-011` Connect: Express accounts, onboarding links, account state and destination-charge sales with a platform fee
   - Depends on: `RMI-PAYFORGE-009`
