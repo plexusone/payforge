@@ -1,0 +1,85 @@
+{
+  "Products": [
+    {
+      "Key": "craftmarket/seller",
+      "Name": "Seller",
+      "Metadata": {
+        "payforge_app": "craftmarket",
+        "payforge_plan": "seller"
+      }
+    },
+    {
+      "Key": "craftmarket/pro_seller",
+      "Name": "Pro Seller",
+      "Metadata": {
+        "payforge_app": "craftmarket",
+        "payforge_plan": "pro_seller"
+      }
+    },
+    {
+      "Key": "craftmarket/sample_pack",
+      "Name": "Sample pack",
+      "Metadata": {
+        "payforge_app": "craftmarket",
+        "payforge_product": "sample_pack"
+      }
+    }
+  ],
+  "Prices": [
+    {
+      "LookupKey": "craftmarket/seller/month",
+      "ProductKey": "craftmarket/seller",
+      "Currency": "usd",
+      "AmountCents": 900,
+      "Interval": "month",
+      "Metadata": {
+        "payforge_app": "craftmarket",
+        "payforge_plan": "seller"
+      }
+    },
+    {
+      "LookupKey": "craftmarket/seller/year",
+      "ProductKey": "craftmarket/seller",
+      "Currency": "usd",
+      "AmountCents": 9000,
+      "Interval": "year",
+      "Metadata": {
+        "payforge_app": "craftmarket",
+        "payforge_plan": "seller"
+      }
+    },
+    {
+      "LookupKey": "craftmarket/pro_seller/month",
+      "ProductKey": "craftmarket/pro_seller",
+      "Currency": "usd",
+      "AmountCents": 2900,
+      "Interval": "month",
+      "Metadata": {
+        "payforge_app": "craftmarket",
+        "payforge_plan": "pro_seller"
+      }
+    },
+    {
+      "LookupKey": "craftmarket/pro_seller/year",
+      "ProductKey": "craftmarket/pro_seller",
+      "Currency": "usd",
+      "AmountCents": 29000,
+      "Interval": "year",
+      "Metadata": {
+        "payforge_app": "craftmarket",
+        "payforge_plan": "pro_seller"
+      }
+    },
+    {
+      "LookupKey": "craftmarket/sample_pack",
+      "ProductKey": "craftmarket/sample_pack",
+      "Currency": "usd",
+      "AmountCents": 499,
+      "Interval": "",
+      "Metadata": {
+        "payforge_app": "craftmarket",
+        "payforge_product": "sample_pack"
+      }
+    }
+  ]
+}

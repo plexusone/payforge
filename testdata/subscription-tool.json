@@ -1,0 +1,85 @@
+{
+  "formatVersion": "1",
+  "app": "taskboard",
+  "currency": "usd",
+  "defaultPlan": "free",
+  "applications": [
+    { "id": "boards", "name": "Boards" },
+    { "id": "reports", "name": "Reports" }
+  ],
+  "tiers": [
+    { "id": "free", "name": "Free", "rank": 1 },
+    { "id": "plus", "name": "Plus", "rank": 2 },
+    { "id": "business", "name": "Business", "rank": 3 },
+    { "id": "enterprise", "name": "Enterprise", "rank": 4 }
+  ],
+  "features": [
+    { "id": "support", "name": "Support", "levels": ["community", "email", "priority"] },
+    { "id": "api", "name": "API access", "levels": ["limited", "full"] },
+    { "id": "sso", "name": "Single sign-on" },
+    { "id": "audit_log", "name": "Audit log" }
+  ],
+  "limits": [
+    { "id": "boards", "name": "Boards", "unit": "board", "period": "none" },
+    { "id": "automations", "name": "Automation runs per month", "unit": "run", "period": "month" },
+    { "id": "guests", "name": "Guest viewers", "unit": "guest", "period": "none" }
+  ],
+  "plans": [
+    {
+      "id": "free", "name": "Free", "tier": "free", "selfServe": true,
+      "features": [ { "feature": "support", "level": "community" } ],
+      "limits": [
+        { "limit": "boards", "max": 3 },
+        { "limit": "automations", "max": 100, "fairUse": true },
+        { "limit": "guests", "max": 5 }
+      ]
+    },
+    {
+      "id": "plus", "name": "Plus", "tier": "plus", "selfServe": true, "trialDays": 14,
+      "prices": [ { "interval": "month", "amountCents": 1200 }, { "interval": "year", "amountCents": 12000 } ],
+      "features": [ { "feature": "support", "level": "email" }, { "feature": "api", "level": "limited" } ],
+      "limits": [
+        { "limit": "boards", "max": 25 },
+        { "limit": "automations", "max": 2000, "fairUse": true },
+        { "limit": "guests", "max": 50 }
+      ]
+    },
+    {
+      "id": "business", "name": "Business", "tier": "business", "selfServe": true, "trialDays": 14,
+      "prices": [ { "interval": "month", "amountCents": 4900 }, { "interval": "year", "amountCents": 49000 } ],
+      "features": [
+        { "feature": "support", "level": "priority" },
+        { "feature": "api", "level": "full" },
+        { "feature": "audit_log", "enabled": true }
+      ],
+      "limits": [
+        { "limit": "boards", "unlimited": true },
+        { "limit": "automations", "unlimited": true, "fairUse": true },
+        { "limit": "guests", "max": 500 }
+      ]
+    },
+    {
+      "id": "enterprise", "name": "Enterprise", "tier": "enterprise", "selfServe": false,
+      "features": [
+        { "feature": "support", "level": "priority" },
+        { "feature": "api", "level": "full" },
+        { "feature": "sso", "enabled": true },
+        { "feature": "audit_log", "enabled": true }
+      ],
+      "limits": [
+        { "limit": "boards", "unlimited": true },
+        { "limit": "automations", "unlimited": true },
+        { "limit": "guests", "unlimited": true }
+      ]
+    }
+  ],
+  "entitlements": [
+    { "tier": "free", "application": "boards", "seats": 3 },
+    { "tier": "plus", "application": "boards", "seats": 10 },
+    { "tier": "plus", "application": "reports", "seats": 10 },
+    { "tier": "business", "application": "boards", "seats": 50 },
+    { "tier": "business", "application": "reports", "seats": 50 },
+    { "tier": "enterprise", "application": "boards", "unlimitedSeats": true },
+    { "tier": "enterprise", "application": "reports", "unlimitedSeats": true }
+  ]
+}

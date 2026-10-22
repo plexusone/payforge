@@ -1,0 +1,67 @@
+{
+  "formatVersion": "1",
+  "app": "craftmarket",
+  "currency": "usd",
+  "defaultPlan": "browser",
+  "applications": [
+    { "id": "market", "name": "Marketplace" },
+    { "id": "studio", "name": "Seller studio" }
+  ],
+  "tiers": [
+    { "id": "browser", "name": "Browser", "rank": 1 },
+    { "id": "seller", "name": "Seller", "rank": 2 },
+    { "id": "pro_seller", "name": "Pro Seller", "rank": 3 }
+  ],
+  "features": [
+    { "id": "sell", "name": "Sell items" },
+    { "id": "storefront", "name": "Storefront branding", "levels": ["marketplace", "custom", "white_label"] },
+    { "id": "video_hosted", "name": "Hosted video" },
+    { "id": "video_embed", "name": "Embedded video from other sites" }
+  ],
+  "limits": [
+    { "id": "listings", "name": "Active listings", "unit": "listing", "period": "none" },
+    { "id": "payouts", "name": "Payouts per month", "unit": "payout", "period": "month" }
+  ],
+  "plans": [
+    {
+      "id": "browser", "name": "Browser", "tier": "browser", "selfServe": true,
+      "features": [ { "feature": "video_embed", "enabled": true } ],
+      "limits": [ { "limit": "listings", "max": 0 } ]
+    },
+    {
+      "id": "seller", "name": "Seller", "tier": "seller", "selfServe": true,
+      "prices": [ { "interval": "month", "amountCents": 900 }, { "interval": "year", "amountCents": 9000 } ],
+      "features": [
+        { "feature": "sell", "enabled": true },
+        { "feature": "storefront", "level": "marketplace" },
+        { "feature": "video_embed", "enabled": true }
+      ],
+      "limits": [ { "limit": "listings", "max": 50 }, { "limit": "payouts", "max": 4 } ],
+      "platformFeeBps": 800
+    },
+    {
+      "id": "pro_seller", "name": "Pro Seller", "tier": "pro_seller", "selfServe": true,
+      "prices": [ { "interval": "month", "amountCents": 2900 }, { "interval": "year", "amountCents": 29000 } ],
+      "features": [
+        { "feature": "sell", "enabled": true },
+        { "feature": "storefront", "level": "custom" },
+        { "feature": "video_hosted", "enabled": true },
+        { "feature": "video_embed", "enabled": true }
+      ],
+      "limits": [ { "limit": "listings", "unlimited": true }, { "limit": "payouts", "max": 31 } ],
+      "platformFeeBps": 500
+    }
+  ],
+  "products": [
+    { "id": "sample_pack", "name": "Sample pack", "amountCents": 499 },
+    { "id": "listing", "name": "A seller's listing", "sellerSet": true, "minAmountCents": 100 }
+  ],
+  "marketplace": { "platformFeeBps": 1000 },
+  "entitlements": [
+    { "tier": "browser", "application": "market", "seats": 1 },
+    { "tier": "seller", "application": "market", "seats": 1 },
+    { "tier": "seller", "application": "studio", "seats": 1 },
+    { "tier": "pro_seller", "application": "market", "seats": 3 },
+    { "tier": "pro_seller", "application": "studio", "seats": 3 }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "Products": [
+    {
+      "Key": "taskboard/plus",
+      "Name": "Plus",
+      "Metadata": {
+        "payforge_app": "taskboard",
+        "payforge_plan": "plus"
+      }
+    },
+    {
+      "Key": "taskboard/business",
+      "Name": "Business",
+      "Metadata": {
+        "payforge_app": "taskboard",
+        "payforge_plan": "business"
+      }
+    }
+  ],
+  "Prices": [
+    {
+      "LookupKey": "taskboard/plus/month",
+      "ProductKey": "taskboard/plus",
+      "Currency": "usd",
+      "AmountCents": 1200,
+      "Interval": "month",
+      "Metadata": {
+        "payforge_app": "taskboard",
+        "payforge_plan": "plus"
+      }
+    },
+    {
+      "LookupKey": "taskboard/plus/year",
+      "ProductKey": "taskboard/plus",
+      "Currency": "usd",
+      "AmountCents": 12000,
+      "Interval": "year",
+      "Metadata": {
+        "payforge_app": "taskboard",
+        "payforge_plan": "plus"
+      }
+    },
+    {
+      "LookupKey": "taskboard/business/month",
+      "ProductKey": "taskboard/business",
+      "Currency": "usd",
+      "AmountCents": 4900,
+      "Interval": "month",
+      "Metadata": {
+        "payforge_app": "taskboard",
+        "payforge_plan": "business"
+      }
+    },
+    {
+      "LookupKey": "taskboard/business/year",
+      "ProductKey": "taskboard/business",
+      "Currency": "usd",
+      "AmountCents": 49000,
+      "Interval": "year",
+      "Metadata": {
+        "payforge_app": "taskboard",
+        "payforge_plan": "business"
+      }
+    }
+  ]
+}
