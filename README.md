@@ -34,8 +34,8 @@ entitlement through ports the host supplies.
 
 > **Status:** in development. The provider-neutral core and the Stripe
 > adapter's customers, plan and one-time checkout, customer portal, catalog
-> sync and webhook verification exist.
-> Connect and the subscription lifecycle follow; see the
+> sync, webhook verification and the subscription lifecycle exist.
+> Connect follows; see the
 > [roadmap](docs/specs/initiatives/INIT-PAYFORGE-001/ROADMAP.md).
 
 ```go
@@ -108,6 +108,21 @@ func handle(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
+A subscription event then becomes the account's entitlement, decided from what
+Stripe holds now rather than the order webhooks arrived in:
+
+```go
+life := &payforge.Lifecycle{
+	Spec: spec, Store: store, Sink: sink, // yours: see payforgetest to check them
+	Provider: billing,                     // the Stripe client reads subscriptions
+}
+res, err := life.Handle(ctx, ev)
+// err: answer 5xx and Stripe redelivers. Otherwise answer 2xx; res.Outcome is
+// applied, duplicate, ignored or skipped, with a Reason.
+```
+
+A subscription grants while it is `active`, `trialing` or `past_due`. A price the
+spec does not have never grants.
 Everything written to the provider carries `payforge_app`, so several products
 can share one account and still be told apart.
 

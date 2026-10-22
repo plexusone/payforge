@@ -54,11 +54,11 @@ configuration, other payment providers, and a command-line tool over the core.
 
 **Theme:** A paid subscription becomes the host's entitlement through ports, correctly under replay, reordering and late payments.
 
-- [ ] `RMI-PAYFORGE-014` Ports: the host's store and entitlement sink, and in-memory implementations
+- [x] `RMI-PAYFORGE-014` Ports: the host's store and entitlement sink, and in-memory implementations
   - Depends on: `RMI-PAYFORGE-003`
-- [ ] `RMI-PAYFORGE-015` Lifecycle handler: subject and plan resolution, which subscription states grant a plan, and idempotency by event
+- [x] `RMI-PAYFORGE-015` Lifecycle handler: subject and plan resolution, which subscription states grant a plan, and idempotency by event
   - Depends on: `RMI-PAYFORGE-012`, `RMI-PAYFORGE-014`, `RMI-PAYFORGE-007`
-- [ ] `RMI-PAYFORGE-016` Conformance suite for stores and sinks, and lifecycle tests for replays, out-of-order events and unknown prices
+- [x] `RMI-PAYFORGE-016` Conformance suite for stores and sinks, and lifecycle tests for replays, out-of-order events and unknown prices
   - Depends on: `RMI-PAYFORGE-015`
 - [ ] `RMI-PAYFORGE-017` Marketplace sale events: refunds and Connect account changes applied through the same ports
   - Depends on: `RMI-PAYFORGE-011`, `RMI-PAYFORGE-015`

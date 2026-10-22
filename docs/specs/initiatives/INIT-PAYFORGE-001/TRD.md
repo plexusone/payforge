@@ -178,35 +178,67 @@ ev, err := stripe.ParseEvent(payload, signatureHeader, secret)
 
 ```go
 type EntitlementSink interface {
-    Apply(ctx context.Context, e Entitlement) error   // tier, limits, validUntil, granted
+    Apply(ctx context.Context, e Entitlement) error
 }
 
 type Store interface {                  // the host's persistence
-    Subject(ctx, customerID string) (Subject, error)
+    SubjectForCustomer(ctx, customerID string) (string, error) // ErrNotFound if none
     Seen(ctx, eventID string) (bool, error)
     MarkSeen(ctx, eventID string) error
 }
 
-type Lifecycle struct { Spec *pricingspec.Spec; Store Store; Sink EntitlementSink }
+type SubscriptionReader interface {     // the Stripe client implements it
+    Subscriptions(ctx, customerID string) ([]SubscriptionState, error)
+}
 
-func (l *Lifecycle) Handle(ctx context.Context, ev Event) error
+type Lifecycle struct {
+    Spec *pricingspec.Spec; Store Store; Sink EntitlementSink
+    Provider SubscriptionReader; LegacyPrefixes []string
+}
+
+func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
 ```
 
-- `Handle` resolves the subject (from metadata, then from the customer),
-  resolves the plan (from the price's lookup key, falling back to metadata),
-  and tells the sink the resulting entitlement: the plan's tier, limits and
-  features, the period end, and whether it is granted.
-- It is idempotent: an event already seen changes nothing, and events that
-  arrive out of order for one subscription use the provider's own
-  subscription state, not the order received.
-- A subscription for a price the spec does not know is logged and
-  ignored, never granted.
-- The host implements `EntitlementSink` to update its own record of the
-  organization's plan; a platform implements it by writing the organization's
-  entitlement.
+- `Handle` returns an error only for something a retry could fix (the store, the
+  provider or the sink), which the host answers with a 5xx so the provider
+  redelivers. Everything else is a `Result` the host acknowledges: `applied`,
+  `duplicate`, `ignored` (not a subscription event) or `skipped` (relevant but
+  not actionable, such as another product's event or an unknown account), with a
+  reason.
+- It resolves the account from the event's metadata, then from the host's
+  `Store.SubjectForCustomer`.
+- **The provider decides, not the event.** After any subscription event, with a
+  `Provider` set, the account's entitlement is computed from all of the
+  customer's subscriptions as the provider holds them now: the highest plan among
+  those that grant, the later period end breaking a tie, the default plan when
+  none grants. A late `updated` that says `active` for a subscription that has
+  since ended, a late `deleted` for an old subscription while a new one is live,
+  and a replay all give the same answer, whatever order events arrived in.
+  Without a `Provider` the event alone decides, and an ended subscription is
+  never granted whatever status the event carries.
+- **Only a price the spec has can grant.** A line grants through its lookup key
+  only if the key names this app, a plan of the spec and an interval that plan
+  has a price for. A price made by hand, another app's price, an arranged plan or
+  a free plan resolves to nothing. A price from before payforge with no key is
+  named by the subscription's metadata, and counts only for a self-serve plan
+  with prices. With several lines the highest plan wins.
+- `Entitlement` carries the plan the account should be on (the default plan when
+  nothing grants), whether it is granted, the subscribed plan and its status, the
+  period end as information, the subscription and customer, an `Origin` and the
+  event ID, so a host that sets a plan by hand can see where a change came from
+  and decide whether to let it through.
+- An event is recorded as seen only after the sink applied it, so a failed
+  attempt is retried; `Apply` receives the account's whole current entitlement,
+  not a change, so applying it twice leaves the same state.
+- Checkout, invoice and other events are ignored by the lifecycle: a
+  subscription's checkout and renewals are applied from its own subscription
+  events, and one-time sales and refunds are the host's (the Connect work adds
+  the sale events).
 
 Persistence, authorization and audit are interfaces the host supplies. The
-library includes in-memory implementations and a conformance suite for them.
+library includes in-memory implementations (`MemoryStore`, `MemorySink`) and the
+`payforgetest` package, a conformance suite a host runs against its own store
+and sink.
 
 ## Billing not configured
 
