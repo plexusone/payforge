@@ -71,10 +71,14 @@ plans:
 products:                    # one-time purchases
   - id: verified-record
     name: Verified record
-    amountCents: 999
+    amountCents: 999          # fixed price
+  - id: item-sale
+    name: Item sale
+    seller: true              # the seller sets the price
+    minAmountCents: 50
 
 marketplace:                 # sales by sellers, paid out through Connect
-  platformFee: { percent: 10 }
+  platformFee: { bps: 1000 }       # basis points, 0 to 10000
 ```
 
 Rules the loader enforces:
@@ -233,6 +237,25 @@ read revenue.
 - Live tests against the provider's test mode are opt-in, read the key from the
   environment, and never run by default.
 
+## Findings from the inventory
+
+The [inventory](INVENTORY.md) of the two existing integrations changes this
+draft in these ways, which the design items fold in:
+
+- The marketplace fee is in **basis points**, and a seller-set product has a
+  **minimum amount**.
+- A subscription grants its plan while `past_due`; the two integrations
+  disagreed and this follows the one that has run.
+- Lifecycle events are ordered by **re-reading the subscription** (or a
+  recency check) as well as deduplicated by event ID, because replay-safe state
+  writes alone let a late event undo a cancellation.
+- The sink is told **where a change came from**, so a host can keep a plan it
+  set by hand.
+- Legacy host-specific **metadata keys are read as aliases** and the keys
+  written use a configurable prefix, so existing Stripe objects keep working.
+- A configured provider **must have its webhook secret and prices** at
+  startup, and **several webhook secrets** are supported for Connect.
+
 ## Open questions
 
 - Whether the catalog is YAML, JSON or both on disk, and how a host layers an
@@ -241,6 +264,4 @@ read revenue.
   follow it.
 - How a platform that hosts many products represents "one catalog per product"
   in one deployment.
-- Which of the two existing integrations' behaviors are customer-visible and
-  must be preserved on migration (to be listed during the review item).
 - Whether tax, coupons and trials beyond a trial length are in scope.

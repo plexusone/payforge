@@ -14,7 +14,7 @@ configuration, other payment providers, and a command-line tool over the core.
 
 **Theme:** Both existing Stripe integrations are inventoried, the catalog and the lifecycle are designed from them, and the TRD is frozen before code is moved.
 
-- [ ] `RMI-PAYFORGE-001` Inventory the two existing Stripe integrations: what each does, the metadata and states it relies on, and the behavior customers can see
+- [x] `RMI-PAYFORGE-001` Inventory the two existing Stripe integrations: what each does, the metadata and states it relies on, and the behavior customers can see
 - [ ] `RMI-PAYFORGE-002` Design the catalog format from the plans and packaging in use, covering recurring plans, one-time products and marketplace sales
   - Depends on: `RMI-PAYFORGE-001`
 - [ ] `RMI-PAYFORGE-003` Design the lifecycle: events, the subscription states that grant a plan, ports for storage and entitlement, and idempotency
