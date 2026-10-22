@@ -98,6 +98,9 @@ type SubscriptionState struct {
 	PeriodEnd         time.Time
 	CancelAtPeriodEnd bool
 	TrialEnd          time.Time
+	// Metadata is a copy of the subscription's metadata, which names the plan
+	// when its price carries no lookup key.
+	Metadata map[string]string
 }
 
 // SubscriptionItem is one line of a subscription.
@@ -133,4 +136,32 @@ type RefundResult struct {
 	AmountCents   int64
 	RefundedCents int64
 	Full          bool
+}
+
+// MetadataSubject reads the host's subject from an object's metadata: payforge's
+// own key first, then each legacy prefix's "<prefix>_organization_id".
+func MetadataSubject(meta map[string]string, legacyPrefixes []string) string {
+	if v := meta[MetaSubject]; v != "" {
+		return v
+	}
+	for _, p := range legacyPrefixes {
+		if v := meta[p+"_organization_id"]; v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// MetadataPlan reads the plan from an object's metadata: payforge's own key
+// first, then each legacy prefix's "<prefix>_plan".
+func MetadataPlan(meta map[string]string, legacyPrefixes []string) string {
+	if v := meta[MetaPlan]; v != "" {
+		return v
+	}
+	for _, p := range legacyPrefixes {
+		if v := meta[p+"_plan"]; v != "" {
+			return v
+		}
+	}
+	return ""
 }

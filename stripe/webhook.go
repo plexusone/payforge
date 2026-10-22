@@ -236,17 +236,9 @@ func (w Webhook) fill(out *payforge.Event, raw json.RawMessage) error {
 		out.Metadata[k] = v
 	}
 	out.App = meta[payforge.MetaApp]
-	out.Subject = meta[payforge.MetaSubject]
-	out.Plan = meta[payforge.MetaPlan]
+	out.Subject = payforge.MetadataSubject(meta, w.LegacyPrefixes)
+	out.Plan = payforge.MetadataPlan(meta, w.LegacyPrefixes)
 	out.Product = meta[payforge.MetaProduct]
-	for _, prefix := range w.LegacyPrefixes {
-		if out.Subject == "" {
-			out.Subject = meta[prefix+"_organization_id"]
-		}
-		if out.Plan == "" {
-			out.Plan = meta[prefix+"_plan"]
-		}
-	}
 
 	switch out.Kind {
 	case payforge.EventCheckoutCompleted:
@@ -259,7 +251,7 @@ func (w Webhook) fill(out *payforge.Event, raw json.RawMessage) error {
 	case payforge.EventSubscriptionCreated, payforge.EventSubscriptionUpdated, payforge.EventSubscriptionEnded:
 		s := &payforge.SubscriptionState{
 			ID: o.ID, Status: o.Status, CancelAtPeriodEnd: o.CancelAtPeriodEnd,
-			PeriodEnd: unix(o.CurrentPeriodEnd), TrialEnd: unix(o.TrialEnd),
+			PeriodEnd: unix(o.CurrentPeriodEnd), TrialEnd: unix(o.TrialEnd), Metadata: out.Metadata,
 		}
 		for _, it := range o.Items.Data {
 			s.Items = append(s.Items, payforge.SubscriptionItem{PriceID: it.Price.ID, LookupKey: it.Price.LookupKey})
