@@ -166,3 +166,27 @@ func TestProviderPlanContents(t *testing.T) {
 		t.Fatal("the provider plan is not stable")
 	}
 }
+
+func TestGrants(t *testing.T) {
+	for status, want := range map[string]bool{
+		payforge.StatusActive: true, payforge.StatusTrialing: true, payforge.StatusPastDue: true,
+		payforge.StatusUnpaid: false, payforge.StatusCanceled: false, payforge.StatusIncomplete: false,
+		payforge.StatusIncompleteExpired: false, payforge.StatusPaused: false,
+		"": false, "something_new": false,
+	} {
+		if got := payforge.Grants(status); got != want {
+			t.Errorf("Grants(%q) = %v, want %v", status, got, want)
+		}
+	}
+}
+
+func TestDisabledRefusesWhatNeedsAProvider(t *testing.T) {
+	ctx := context.Background()
+	d := payforge.Disabled(load(t, "subscription-tool.json"))
+	if _, err := d.CheckoutProduct(ctx, payforge.ProductCheckout{}); !errors.Is(err, payforge.ErrNotConfigured) {
+		t.Errorf("CheckoutProduct: %v", err)
+	}
+	if _, err := d.EnsureCustomer(ctx, payforge.Subject{ID: "x"}); !errors.Is(err, payforge.ErrNotConfigured) {
+		t.Errorf("EnsureCustomer: %v", err)
+	}
+}
