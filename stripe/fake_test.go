@@ -2,10 +2,13 @@ package stripe_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -35,13 +38,20 @@ type fake struct {
 	customers []string
 	// subscriptions is the status of each subscription the customer has.
 	subscriptions []string
+	// products and priceObjs hold what a sync reads and writes, by product ID
+	// and by lookup key. A GET of a price whose key is in priceObjs returns it;
+	// otherwise prices holds just an ID.
+	products  map[string]map[string]any
+	priceObjs map[string]map[string]any
+	nextPrice int
 	// fail makes the named "METHOD path" answer with a Stripe error.
 	fail map[string]int
 }
 
 func newFake(t *testing.T) (*fake, *httptest.Server) {
 	t.Helper()
-	f := &fake{t: t, prices: map[string]string{}, fail: map[string]int{}}
+	f := &fake{t: t, prices: map[string]string{}, fail: map[string]int{},
+		products: map[string]map[string]any{}, priceObjs: map[string]map[string]any{}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	return f, srv
@@ -61,17 +71,76 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if status, ok := f.fail[r.Method+" "+r.URL.Path]; ok {
+		code := "parameter_invalid_empty"
+		if status == http.StatusNotFound {
+			code = "resource_missing"
+		}
 		w.WriteHeader(status)
-		_, _ = w.Write([]byte(`{"error":{"type":"invalid_request_error","code":"resource_missing","message":"No such thing"}}`))
+		_, _ = w.Write([]byte(`{"error":{"type":"invalid_request_error","code":"` + code + `","message":"Something is wrong"}}`))
 		return
 	}
 	list := func(url string, data []map[string]any) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "url": url, "has_more": false, "data": data})
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if strings.HasPrefix(r.URL.Path, "/v1/products/") {
+		id := strings.TrimPrefix(r.URL.Path, "/v1/products/")
+		prod, ok := f.products[id]
+		switch {
+		case r.Method == "GET" && !ok:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"type":"invalid_request_error","code":"resource_missing","message":"No such product"}}`))
+		case r.Method == "GET":
+			_ = json.NewEncoder(w).Encode(prod)
+		case r.Method == "POST" && ok: // update
+			if v, has := form["name"]; has {
+				prod["name"] = v
+			}
+			meta, _ := prod["metadata"].(map[string]any)
+			for k, v := range form {
+				if strings.HasPrefix(k, "metadata[") {
+					meta[strings.TrimSuffix(strings.TrimPrefix(k, "metadata["), "]")] = v
+				}
+			}
+			_ = json.NewEncoder(w).Encode(prod)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+		return
+	}
 	switch r.Method + " " + r.URL.Path {
+	case "POST /v1/products":
+		meta := map[string]any{}
+		for k, v := range form {
+			if strings.HasPrefix(k, "metadata[") {
+				meta[strings.TrimSuffix(strings.TrimPrefix(k, "metadata["), "]")] = v
+			}
+		}
+		f.products[form["id"]] = map[string]any{"id": form["id"], "object": "product", "name": form["name"], "active": true, "metadata": meta}
+		_ = json.NewEncoder(w).Encode(f.products[form["id"]])
+	case "POST /v1/prices":
+		f.nextPrice++
+		meta := map[string]any{}
+		for k, v := range form {
+			if strings.HasPrefix(k, "metadata[") {
+				meta[strings.TrimSuffix(strings.TrimPrefix(k, "metadata["), "]")] = v
+			}
+		}
+		amount, _ := strconv.ParseInt(form["unit_amount"], 10, 64)
+		obj := map[string]any{"id": fmt.Sprintf("price_new_%d", f.nextPrice), "object": "price", "active": true,
+			"unit_amount": amount, "currency": form["currency"], "product": form["product"],
+			"lookup_key": form["lookup_key"], "metadata": meta}
+		if iv, ok := form["recurring[interval]"]; ok {
+			obj["recurring"] = map[string]any{"interval": iv, "interval_count": 1}
+		}
+		f.priceObjs[form["lookup_key"]] = obj
+		_ = json.NewEncoder(w).Encode(obj)
 	case "GET /v1/prices":
 		var data []map[string]any
-		if id, ok := f.prices[form["lookup_keys[0]"]]; ok {
+		if obj, ok := f.priceObjs[form["lookup_keys[0]"]]; ok {
+			data = append(data, obj)
+		} else if id, ok := f.prices[form["lookup_keys[0]"]]; ok {
 			data = append(data, map[string]any{"id": id, "object": "price", "lookup_key": form["lookup_keys[0]"]})
 		}
 		list("/v1/prices", data)

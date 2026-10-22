@@ -18,6 +18,10 @@ const (
 	cancelURL = "https://app.example.com/pricing"
 )
 
+func planIn(plan string) payforge.PlanCheckout {
+	return payforge.PlanCheckout{Subject: subj, Plan: plan, Interval: pricingspec.IntervalMonth, SuccessURL: okURL, CancelURL: cancelURL}
+}
+
 func TestNewRequiresAKeyAndAValidSpec(t *testing.T) {
 	spec := load(t, "subscription-tool.json")
 	if _, err := stripe.New(spec, stripe.Config{}); !errors.Is(err, payforge.ErrNotConfigured) {
