@@ -26,13 +26,13 @@ configuration, other payment providers, and a command-line tool over the core.
 
 **Theme:** payforge reads a product's pricing and packaging from the pricing spec, runs without a provider in free mode, and fails at startup when billing is configured but the spec cannot support it.
 
-- [ ] `RMI-PAYFORGE-005` Module and package layout, importing the pricing spec's types
+- [x] `RMI-PAYFORGE-005` Module and package layout, importing the pricing spec's types
   - Depends on: `RMI-PAYFORGE-004`, `RMI-SYSTEMSPECPRICINGPACKAGING-004`
-- [ ] `RMI-PAYFORGE-006` Startup checks: when a provider is configured, every self-serve plan has a price and the webhook secret is set; otherwise an error
+- [x] `RMI-PAYFORGE-006` Startup checks: when a provider is configured, every self-serve plan has a price and the webhook secret is set; otherwise an error
   - Depends on: `RMI-PAYFORGE-005`
-- [ ] `RMI-PAYFORGE-007` Free mode: a billing implementation with no provider whose plan lookups return the spec's default plan and whose checkout calls report not configured
+- [x] `RMI-PAYFORGE-007` Free mode: a billing implementation with no provider whose plan lookups return the spec's default plan and whose checkout calls report not configured
   - Depends on: `RMI-PAYFORGE-005`
-- [ ] `RMI-PAYFORGE-008` Provider plan: the products and prices a provider should hold, with stable keys, computed from the spec
+- [x] `RMI-PAYFORGE-008` Provider plan: the products and prices a provider should hold, with stable keys, computed from the spec
   - Depends on: `RMI-PAYFORGE-005`
 
 ## Phase 3 — Stripe adapter
