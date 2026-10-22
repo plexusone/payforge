@@ -45,5 +45,7 @@ can share one account and still be told apart.
 
 ## Development
 
-`go.mod` has a relative `replace` for the unreleased pricing spec. Remove it
-before pushing or tagging, once the spec is released.
+```bash
+go test ./...
+go test . -update   # rewrite the golden files, then review the diff
+```
