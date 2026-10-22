@@ -38,6 +38,8 @@ type fake struct {
 	customers []string
 	// subscriptions is the status of each subscription the customer has.
 	subscriptions []string
+	// subscriptionObjs, when set, are returned whole instead of subscriptions.
+	subscriptionObjs []map[string]any
 	// products and priceObjs hold what a sync reads and writes, by product ID
 	// and by lookup key. A GET of a price whose key is in priceObjs returns it;
 	// otherwise prices holds just an ID.
@@ -153,7 +155,7 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "POST /v1/customers":
 		_, _ = w.Write([]byte(`{"id":"cus_new","object":"customer"}`))
 	case "GET /v1/subscriptions":
-		var data []map[string]any
+		data := f.subscriptionObjs
 		for _, s := range f.subscriptions {
 			data = append(data, map[string]any{"id": "sub_1", "object": "subscription", "status": s})
 		}

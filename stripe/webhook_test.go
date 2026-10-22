@@ -2,6 +2,7 @@ package stripe_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -306,5 +307,42 @@ func TestWebhookRejectsAMalformedObject(t *testing.T) {
 		if _, err := wh().Parse(p, sign(p, whSecret, time.Now())); err == nil || errors.Is(err, payforge.ErrSignatureInvalid) {
 			t.Errorf("%s: err = %v", name, err)
 		}
+	}
+}
+
+// The whole path: a signed webhook, read by the adapter, decided from Stripe's
+// current subscriptions, and applied to a sink.
+func TestWebhookToEntitlement(t *testing.T) {
+	f, srv := newFake(t)
+	spec := load(t, "subscription-tool.json")
+	client := newClient(t, spec, srv)
+	sink := payforge.NewMemorySink()
+	l := &payforge.Lifecycle{Spec: spec, Store: payforge.NewMemoryStore(), Sink: sink, Provider: client}
+
+	// Stripe says the customer is on business now, whatever the event carries.
+	f.subscriptionObjs = []map[string]any{{
+		"id": "sub_2", "object": "subscription", "status": "active",
+		"items": map[string]any{"object": "list", "data": []map[string]any{
+			{"id": "si_1", "price": map[string]any{"id": "price_b", "lookup_key": "taskboard/business/month"}, "current_period_end": 1795000000},
+		}},
+	}}
+	// The event is a late one about an old subscription that ended.
+	payload := event("evt_late", "customer.subscription.deleted", "",
+		`{"id":"sub_1","status":"canceled","customer":"cus_1","metadata":{"payforge_app":"taskboard","payforge_subject":"org-1"},
+		  "items":{"data":[{"price":{"id":"price_a","lookup_key":"taskboard/plus/month"}}]}}`)
+	ev, err := wh().Parse(payload, sign(payload, whSecret, time.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := l.Handle(context.Background(), ev)
+	if err != nil || res.Outcome != payforge.OutcomeApplied {
+		t.Fatalf("result = %+v, err = %v", res, err)
+	}
+	got, ok := sink.Get("org-1")
+	if !ok || got.Plan != "business" || !got.Granted || got.SubscriptionID != "sub_2" {
+		t.Fatalf("entitlement = %+v", got)
+	}
+	if res, _ := l.Handle(context.Background(), ev); res.Outcome != payforge.OutcomeDuplicate {
+		t.Fatalf("replay = %+v", res)
 	}
 }

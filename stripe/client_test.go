@@ -412,3 +412,42 @@ func TestStripeFailuresAreReportedNotSwallowed(t *testing.T) {
 		})
 	}
 }
+
+func TestSubscriptionsReadsTheCustomersLiveSubscriptions(t *testing.T) {
+	ctx := context.Background()
+	f, srv := newFake(t)
+	f.subscriptionObjs = []map[string]any{{
+		"id": "sub_1", "object": "subscription", "status": "past_due", "cancel_at_period_end": true, "trial_end": 1791000000,
+		"metadata": map[string]any{"payforge_plan": "plus"},
+		"items": map[string]any{"object": "list", "data": []map[string]any{
+			{"id": "si_1", "price": map[string]any{"id": "price_a", "lookup_key": "taskboard/plus/month"}, "current_period_end": 1795000000},
+			{"id": "si_2", "price": map[string]any{"id": "price_b", "lookup_key": "taskboard/business/month"}, "current_period_end": 1796000000},
+		}},
+	}}
+	c := newClient(t, load(t, "subscription-tool.json"), srv)
+	got, err := c.Subscriptions(ctx, "cus_1")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got = %+v, err = %v", got, err)
+	}
+	s := got[0]
+	if s.ID != "sub_1" || s.Status != "past_due" || !s.CancelAtPeriodEnd || s.Metadata["payforge_plan"] != "plus" {
+		t.Fatalf("subscription = %+v", s)
+	}
+	if len(s.Items) != 2 || s.Items[0].LookupKey != "taskboard/plus/month" || s.Items[1].PriceID != "price_b" {
+		t.Fatalf("items = %+v", s.Items)
+	}
+	if s.PeriodEnd.Unix() != 1796000000 || s.TrialEnd.Unix() != 1791000000 {
+		t.Fatalf("times = %v %v", s.PeriodEnd, s.TrialEnd)
+	}
+	if f.last("GET", "/v1/subscriptions").Form["customer"] != "cus_1" {
+		t.Fatalf("customer = %v", f.last("GET", "/v1/subscriptions").Form)
+	}
+
+	if _, err := c.Subscriptions(ctx, ""); !errors.Is(err, payforge.ErrInvalidSubject) {
+		t.Errorf("no customer: %v", err)
+	}
+	f.fail["GET /v1/subscriptions"] = 400
+	if _, err := c.Subscriptions(ctx, "cus_1"); err == nil || !strings.Contains(err.Error(), "list subscriptions") || strings.Contains(err.Error(), secretKey) {
+		t.Errorf("failure: %v", err)
+	}
+}
