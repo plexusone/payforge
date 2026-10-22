@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/grokify/oscompat/testutil"
 	"github.com/plexusone/payforge"
 	"github.com/plexusone/systemspec-pricingpackaging/pricingspec"
 )
@@ -136,22 +137,7 @@ func TestProviderPlanGolden(t *testing.T) {
 			}
 			got = append(got, '\n')
 			path := filepath.Join("testdata", "golden", name+".provider.json")
-			if *update {
-				if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, got, 0o600); err != nil {
-					t.Fatal(err)
-				}
-				return
-			}
-			want, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("%v (run go test -update)", err)
-			}
-			if string(want) != string(got) {
-				t.Fatalf("differs from %s; run go test -update and review\n%s", path, got)
-			}
+			testutil.AssertGolden(t, path, got, *update)
 		})
 	}
 }
