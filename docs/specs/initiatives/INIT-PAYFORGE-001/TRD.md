@@ -39,19 +39,28 @@ formatVersion: "1"
 app: example-app            # tags everything written to the provider
 currency: usd
 
-features:                   # what a plan can switch on or off
+default: free               # the plan used when billing is not configured, and
+                            # for any plan value that is not recognised
+
+features:                   # what a plan can switch on, off, or set to a level
   custom_domain: { description: "Serve on the customer's own domain" }
   sell_items:    { description: "Sell items to others" }
+  branding:      { levels: [required, optional, removed] }   # ordered, lowest first
+  analytics:     { levels: [basic, detailed] }
 
 limits:                     # what a plan can cap
   published_items: { unit: item, description: "Published items" }
+  exports:         { unit: export, period: month, description: "Exports" }
 
 plans:
   - id: free
     name: Free
     tier: free
     selfServe: true
-    limits: { published_items: { max: 1 } }
+    features: { branding: required, analytics: basic }
+    limits:
+      published_items: { max: 3 }
+      exports: { max: 500, fairUse: true }   # fair use: warns, then reviewed; not a hard wall
   - id: pro
     name: Pro
     tier: pro
@@ -60,13 +69,13 @@ plans:
     prices:
       - { interval: month, amountCents: 2000 }
       - { interval: year,  amountCents: 20000 }
-    features: [sell_items, custom_domain]
+    features: { sell_items: true, custom_domain: true, branding: optional, analytics: detailed }
     limits: { published_items: { max: null } }   # null: unlimited
   - id: enterprise
     name: Enterprise
     tier: enterprise
     selfServe: false         # arranged with the seller; no checkout
-    features: [sell_items, custom_domain]
+    features: { sell_items: true, custom_domain: true, branding: removed, analytics: detailed }
 
 products:                    # one-time purchases
   - id: verified-record
@@ -88,12 +97,21 @@ Rules the loader enforces:
 - Every plan has exactly one `tier`; tiers are an open set of strings the host
   maps to entitlements. A plan with prices is recurring and a plan without is
   not sold through checkout.
+- A feature is either on or off, or has **ordered levels** (for example
+  branding `required`, `optional`, `removed`, or analytics `basic`,
+  `detailed`). A plan sets a feature to `true`, `false` or one of its levels;
+  a check can ask for "at least this level".
+- A limit may have a **period** (`month`, `day`), counted by the host, and may
+  be marked `fairUse`: crossing it warns and flags the account for review
+  instead of refusing, for allowances that are meant to be unlimited in
+  practice but need protection from abuse.
 - A limit's `max` is a number or `null` for unlimited. Zero means zero, not
   unlimited, so a mistake never grants more than intended.
 - Amounts are integers in minor units. A plan has at most one price per
   interval.
-- An unknown plan ID resolves to the free tier (or to the plan the catalog
-  names as `default`), so a stale or unexpected value never grants more.
+- An unknown plan ID resolves to the catalog's `default` plan, so a stale or
+  unexpected value never grants more. A catalog without a `default` must name
+  one of its plans as free.
 - A soft limit (`soft: true`) warns and does not refuse.
 
 The catalog does not hold provider identifiers. Prices are found in the
@@ -210,6 +228,22 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) error
 Persistence, authorization and audit are interfaces the host supplies. The
 library includes in-memory implementations and a conformance suite for them.
 
+## Billing not configured
+
+A host that has no provider configured (no secret key, as in development or a
+deployment that does not charge) runs in **free mode**: every account is on the
+catalog's `default` plan. This is explicit in the API, not a silent
+elevation: `payforge.Disabled(cat)` returns a billing implementation whose
+plan lookups return the default plan, whose checkout calls return
+`ErrNotConfigured`, and which a host can detect to hide upgrade prompts. A
+host that wants everything unlocked for development makes that its own
+decision, for example by naming a different default.
+
+Turning billing on later does not change existing accounts' plans: it is the
+default plan until a subscription says otherwise. A host that has granted
+accounts more than the default while billing was off decides how to treat
+them (a grace period or a migration), since the library cannot know.
+
 ## Metadata and revenue reporting
 
 Everything written to the provider carries `payforge_app`, and subscriptions
@@ -260,6 +294,9 @@ draft in these ways, which the design items fold in:
 
 - Whether the catalog is YAML, JSON or both on disk, and how a host layers an
   environment override such as a test-mode price.
+- How a host counts a period-limited allowance (per month) and where that count
+  lives; the library defines the limit and the check, the host supplies the
+  count.
 - Whether seats and usage-based (metered) prices belong in the first release or
   follow it.
 - How a platform that hosts many products represents "one catalog per product"

@@ -176,7 +176,9 @@ From A:
 4. **A missing webhook secret or price ID is not an error at startup.** Limits
    then apply while plans can never change.
 5. **Stripe off means Enterprise for everyone,** and switching it on applies
-   free limits to every organization at once with no grace.
+   free limits to every organization at once with no grace. **Decision:** with
+   billing not configured every account is on the free tier (the catalog's
+   default plan), explicitly, not Enterprise.
 6. **Only the first line item** of a subscription is read.
 7. **A refund can arrive before the payment** is recorded and is then lost; a
    partial refund and disputes are ignored; a buyer can pay twice because the
@@ -208,7 +210,14 @@ From B:
   currency, not only fixed prices.
 - **A platform fee in basis points,** not whole percent.
 - **Grants while `past_due`,** and a documented rule for every other status.
-- **Unknown price never grants,** and an unknown plan value resolves to free.
+- **Unknown price never grants,** and an unknown plan value resolves to the
+  catalog's default (free) plan.
+- **Features with levels,** not only on and off: branding, analytics and
+  export styles differ by tier in the plans now being considered.
+- **Period-limited and fair-use allowances,** such as exports per
+  month, which warn and flag an account for review rather than refuse.
+- **A free mode** for a host with no provider configured: every account on the
+  default plan.
 - **Legacy metadata keys** read as aliases, and a configurable prefix for the
   keys payforge writes.
 - **Ordering safety** through a re-read or a recency check, plus event-ID
