@@ -15,7 +15,7 @@ A Go library with three layers, each usable without the next:
 host (a product, or a platform that hosts products)
       │
       ▼
-payforge            catalog · limits · lifecycle · ports
+payforge            lifecycle · ports · provider plan (reads the pricing spec)
       │      (provider-neutral core: no payment SDK)
       ▼
 payforge/stripe     checkout · portal · connect · webhooks · sync
@@ -25,113 +25,39 @@ Stripe API
 ```
 
 The core never imports a payment SDK. The Stripe adapter is the only package
-that does, so a host that only reads a catalog and checks limits does not build
+that does, so a host that only reads the pricing spec and checks limits does not build
 the Stripe client.
 
-## The catalog
+## The pricing spec
 
-A catalog is the declarative description of one product's pricing and
-packaging. It is a document (YAML or JSON) loaded into Go types; the Go types
-are the source of truth and the published JSON Schema is generated from them.
+payforge does not define the description of a product's pricing and packaging.
+It reads one, from
+[`systemspec-pricingpackaging`](https://github.com/plexusone/systemspec-pricingpackaging)
+(`INIT-SYSTEMSPECPRICINGPACKAGING-001`): tiers, plans and prices, features with
+levels, limits, one-time products, a marketplace fee and the entitlements each
+tier grants. That repository owns the types, the schema, validation, the plan,
+feature and limit helpers, the pricing view and the diff. This one owns what
+happens at the payment provider and in the subscription lifecycle.
 
-```yaml
-formatVersion: "1"
-app: example-app            # tags everything written to the provider
-currency: usd
+What payforge needs from the spec:
 
-default: free               # the plan used when billing is not configured, and
-                            # for any plan value that is not recognised
-
-features:                   # what a plan can switch on, off, or set to a level
-  custom_domain: { description: "Serve on the customer's own domain" }
-  sell_items:    { description: "Sell items to others" }
-  branding:      { levels: [required, optional, removed] }   # ordered, lowest first
-  analytics:     { levels: [basic, detailed] }
-
-limits:                     # what a plan can cap
-  published_items: { unit: item, description: "Published items" }
-  exports:         { unit: export, period: month, description: "Exports" }
-
-plans:
-  - id: free
-    name: Free
-    tier: free
-    selfServe: true
-    features: { branding: required, analytics: basic }
-    limits:
-      published_items: { max: 3 }
-      exports: { max: 500, fairUse: true }   # fair use: warns, then reviewed; not a hard wall
-  - id: pro
-    name: Pro
-    tier: pro
-    selfServe: true
-    trialDays: 14
-    prices:
-      - { interval: month, amountCents: 2000 }
-      - { interval: year,  amountCents: 20000 }
-    features: { sell_items: true, custom_domain: true, branding: optional, analytics: detailed }
-    limits: { published_items: { max: null } }   # null: unlimited
-  - id: enterprise
-    name: Enterprise
-    tier: enterprise
-    selfServe: false         # arranged with the seller; no checkout
-    features: { sell_items: true, custom_domain: true, branding: removed, analytics: detailed }
-
-products:                    # one-time purchases
-  - id: verified-record
-    name: Verified record
-    amountCents: 999          # fixed price
-  - id: item-sale
-    name: Item sale
-    seller: true              # the seller sets the price
-    minAmountCents: 50
-
-marketplace:                 # sales by sellers, paid out through Connect
-  platformFee: { bps: 1000 }       # basis points, 0 to 10000
-```
-
-Rules the loader enforces:
-
-- Plan IDs, feature keys, limit keys and product IDs are unique; plans and
-  products refer only to declared features and limits.
-- Every plan has exactly one `tier`; tiers are an open set of strings the host
-  maps to entitlements. A plan with prices is recurring and a plan without is
-  not sold through checkout.
-- A feature is either on or off, or has **ordered levels** (for example
-  branding `required`, `optional`, `removed`, or analytics `basic`,
-  `detailed`). A plan sets a feature to `true`, `false` or one of its levels;
-  a check can ask for "at least this level".
-- A limit may have a **period** (`month`, `day`), counted by the host, and may
-  be marked `fairUse`: crossing it warns and flags the account for review
-  instead of refusing, for allowances that are meant to be unlimited in
-  practice but need protection from abuse.
-- A limit's `max` is a number or `null` for unlimited. Zero means zero, not
-  unlimited, so a mistake never grants more than intended.
-- Amounts are integers in minor units. A plan has at most one price per
-  interval.
-- An unknown plan ID resolves to the catalog's `default` plan, so a stale or
-  unexpected value never grants more. A catalog without a `default` must name
-  one of its plans as free.
-- A soft limit (`soft: true`) warns and does not refuse.
-
-The catalog does not hold provider identifiers. Prices are found in the
-provider by lookup key (below), so the same file works against test and live
-accounts.
-
-### Reading the catalog
+- The plans with their prices by interval, to create provider prices.
+- Each plan's tier, to tell the host what a paid subscription means.
+- The default plan, for free mode and for anything unrecognised.
+- The marketplace fee and the one-time products, for Connect sales.
+- The product identifier, to tag everything written to the provider.
 
 ```go
-cat, err := payforge.LoadCatalog(r)       // validates
-plan := cat.PlanOrDefault("pro")
-d := plan.Check(payforge.LimitPublishedItems, current)  // Allowed, Warn, Refuse
-ok := plan.Has("custom_domain")
+spec, err := pricingspec.Load(r)     // validated by the spec package
+plan := spec.PlanOrDefault("pro")
 ```
 
-A pricing page renders `cat.Plans`; enforcement calls `Check` and `Has`.
+A host that cannot be given what it needs (billing is configured but a
+self-serve plan has no price) fails at startup.
 
 ## Provider sync
 
-`stripe.Sync(ctx, client, cat)` makes a Stripe account match the catalog:
+`stripe.Sync(ctx, client, spec)` makes a Stripe account match the spec:
 
 - A product per plan and per one-time product, with metadata
   `payforge_app=<app>` and `payforge_plan=<id>`.
@@ -207,7 +133,7 @@ type Store interface {                  // the host's persistence
     MarkSeen(ctx, eventID string) error
 }
 
-type Lifecycle struct { Catalog *Catalog; Store Store; Sink EntitlementSink }
+type Lifecycle struct { Spec *pricingspec.Spec; Store Store; Sink EntitlementSink }
 
 func (l *Lifecycle) Handle(ctx context.Context, ev Event) error
 ```
@@ -219,7 +145,7 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) error
 - It is idempotent: an event already seen changes nothing, and events that
   arrive out of order for one subscription use the provider's own
   subscription state, not the order received.
-- A subscription for a price the catalog does not know is logged and
+- A subscription for a price the spec does not know is logged and
   ignored, never granted.
 - The host implements `EntitlementSink` to update its own record of the
   organization's plan; a platform implements it by writing the organization's
@@ -232,8 +158,8 @@ library includes in-memory implementations and a conformance suite for them.
 
 A host that has no provider configured (no secret key, as in development or a
 deployment that does not charge) runs in **free mode**: every account is on the
-catalog's `default` plan. This is explicit in the API, not a silent
-elevation: `payforge.Disabled(cat)` returns a billing implementation whose
+spec's default plan. This is explicit in the API, not a silent
+elevation: `payforge.Disabled(spec)` returns a billing implementation whose
 plan lookups return the default plan, whose checkout calls return
 `ErrNotConfigured`, and which a host can detect to hide upgrade prompts. A
 host that wants everything unlocked for development makes that its own
@@ -262,8 +188,9 @@ read revenue.
 
 ## Testing
 
-- Core: unit tests for catalog validation, plan resolution, limits and the
-  grants rules, with a table for each subscription status.
+- Core: unit tests for startup checks, free mode and the grants rules, with a
+  table for each subscription status. Catalog validation, plan resolution and
+  limits are tested in the pricing spec.
 - Stripe adapter: an HTTP test server standing in for the API, recorded event
   payloads for each event type, and signature tests.
 - Lifecycle: the conformance suite over the in-memory store and sink, covering
@@ -292,13 +219,13 @@ draft in these ways, which the design items fold in:
 
 ## Open questions
 
-- Whether the catalog is YAML, JSON or both on disk, and how a host layers an
+- Whether the spec is YAML, JSON or both on disk, and how a host layers an
   environment override such as a test-mode price.
 - How a host counts a period-limited allowance (per month) and where that count
   lives; the library defines the limit and the check, the host supplies the
   count.
 - Whether seats and usage-based (metered) prices belong in the first release or
   follow it.
-- How a platform that hosts many products represents "one catalog per product"
+- How a platform that hosts many products represents "one spec per product"
   in one deployment.
 - Whether tax, coupons and trials beyond a trial length are in scope.

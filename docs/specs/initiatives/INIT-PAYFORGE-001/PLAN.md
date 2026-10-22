@@ -11,9 +11,10 @@ holds the work items and their status.
 - **Extract, don't invent.** Two products already integrate with Stripe. The
   review of both comes first, and the library is extracted from the more
   complete one, so it starts with behavior that has run rather than a guess.
-- **The catalog first.** Packaging is the part every product shares and the
-  part nobody has written down as data. It is specified, validated and given
-  a JSON Schema before the Stripe code is moved.
+- **The spec first.** Packaging is the part every product shares and nobody
+  has written down as data. It is a separate repository
+  (`systemspec-pricingpackaging`) with its own types, schema and validation,
+  and payforge imports it before the Stripe code is moved.
 - **Provider-neutral core, Stripe in an adapter.** Limits, plan resolution and
   the entitlement lifecycle are tested without any payment SDK.
 - **Sync closes the drift.** Prices are created from the catalog and found by
@@ -29,7 +30,7 @@ holds the work items and their status.
 | Phase | Theme | Outcome |
 |---|---|---|
 | 1 | Review and design | Both existing integrations inventoried, the catalog and lifecycle designed, and the TRD frozen |
-| 2 | Catalog and limits | The catalog types, loader, validation, JSON Schema, plan resolution and limit checks |
+| 2 | Consume the pricing spec | Importing the pricing spec, startup checks, free mode and the provider plan |
 | 3 | Stripe adapter | Checkout, portal, customers, Connect, webhooks and catalog sync, extracted and tested |
 | 4 | Lifecycle | Subscription events become entitlements through ports, idempotently, with in-memory implementations |
 | 5 | Adoption and release | The source product adopts it, documentation, examples and v0.1.0 |
