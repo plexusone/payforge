@@ -67,6 +67,19 @@ self-serve plan has no price) fails at startup.
   moves the lookup key to it and leaves the old one in place for existing
   subscribers. Sync never deletes and never edits an amount.
 - Sync is idempotent and has a dry-run mode that reports what it would do.
+- A product cannot be found by key at Stripe, so its ID is derived from the key
+  (`payforge_<app>_<plan>`), which Stripe lets the creator choose. A price is
+  found by lookup key.
+- A price counts as unchanged only when its amount, currency, interval and
+  product all match. Any difference creates a new price with
+  `transfer_lookup_key`, which moves the key to it.
+- Sync changes a product's name and payforge metadata when they differ, and
+  nothing else about it. It adopts an object that carries no app metadata, and
+  stops with an error on one that names another app, or on an archived product:
+  it never brings an archived object back.
+- If a step fails, the report holds the steps already taken along with the
+  error, so a retry knows where it stands. Plans removed from the spec leave
+  their products and prices in the account.
 
 Checkout then names a plan and interval and looks the price up by key, so no
 price ID appears in configuration.

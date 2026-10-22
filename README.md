@@ -33,8 +33,9 @@ checkout and the customer portal, and turns a paid subscription into an
 entitlement through ports the host supplies.
 
 > **Status:** in development. The provider-neutral core and the Stripe
-> adapter's customers, plan and one-time checkout, and customer portal exist.
-> Catalog sync, Connect, webhooks and the subscription lifecycle follow; see the
+> adapter's customers, plan and one-time checkout, customer portal and catalog
+> sync exist.
+> Connect, webhooks and the subscription lifecycle follow; see the
 > [roadmap](docs/specs/initiatives/INIT-PAYFORGE-001/ROADMAP.md).
 
 ```go
@@ -73,7 +74,20 @@ sess, err := billing.CheckoutPlan(ctx, payforge.PlanCheckout{
 // Send the buyer to sess.URL.
 ```
 
-Prices are found by lookup key, so the catalog must be in the account. A subject
+Prices are found by lookup key, so the catalog must be in the account. Sync it
+first, with a dry run to see what would change:
+
+```go
+report, err := billing.Sync(ctx, true) // true: report only, write nothing
+for _, a := range report.Actions {
+	fmt.Println(a.Kind, a.Key, a.Detail)
+}
+_, err = billing.Sync(ctx, false)
+```
+
+Sync is safe to repeat. It never deletes, and it never edits an amount: Stripe
+prices are immutable, so a changed amount creates a new price, moves the lookup
+key to it and leaves the old one for the subscribers already on it. A subject
 that already has a granting subscription is refused with
 `payforge.ErrAlreadySubscribed`, and a plan with a trial starts one without
 asking for a card.
