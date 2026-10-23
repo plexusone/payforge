@@ -248,10 +248,26 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
 - An event is recorded as seen only after the sink applied it, so a failed
   attempt is retried; `Apply` receives the account's whole current entitlement,
   not a change, so applying it twice leaves the same state.
-- Checkout, invoice and other events are ignored by the lifecycle: a
-  subscription's checkout and renewals are applied from its own subscription
-  events, and one-time sales and refunds are the host's (the Connect work adds
-  the sale events).
+- Checkout and invoice events are ignored by the lifecycle: a subscription's
+  checkout and renewals are applied from its own subscription events, and a
+  one-time sale is the host's own to record when its checkout completes.
+- **Refunds** go to an optional `SaleSink`. Only a charge that carries a payforge
+  product is a sale; a refund of a subscription's invoice, or of another app's
+  charge, is skipped. The sink receives the buyer, the seller, the product, the
+  charge and payment intent to match the host's own record, and the refunded
+  total. A full refund ends the buyer's access to what was bought and the host
+  keeps the data. The total only grows, and a sink keeps the highest it has seen
+  and treats a full refund as permanent, so a late event for an earlier partial
+  refund cannot reopen a sale.
+- **Connected account changes** go to an optional `SellerSink`, which receives
+  the whole current state: whether the account can take charges and be paid
+  out, and whether the details are submitted. With an `AccountReader` (the
+  Stripe client is one) the provider's state now is applied, not the event's, so
+  a late event cannot turn charges back on or off. An account without payforge's
+  metadata, or another app's, is skipped.
+- Without a sink, its events are ignored and not recorded, so a host can add one
+  later. As for entitlements, an event is recorded as seen only after the sink
+  applied it.
 
 Persistence, authorization and audit are interfaces the host supplies. The
 library includes in-memory implementations (`MemoryStore`, `MemorySink`) and the

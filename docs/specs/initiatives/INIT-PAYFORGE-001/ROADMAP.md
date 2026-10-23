@@ -60,7 +60,7 @@ configuration, other payment providers, and a command-line tool over the core.
   - Depends on: `RMI-PAYFORGE-012`, `RMI-PAYFORGE-014`, `RMI-PAYFORGE-007`
 - [x] `RMI-PAYFORGE-016` Conformance suite for stores and sinks, and lifecycle tests for replays, out-of-order events and unknown prices
   - Depends on: `RMI-PAYFORGE-015`
-- [ ] `RMI-PAYFORGE-017` Marketplace sale events: refunds and Connect account changes applied through the same ports
+- [x] `RMI-PAYFORGE-017` Marketplace sale events: refunds and Connect account changes applied through sinks the host supplies
   - Depends on: `RMI-PAYFORGE-011`, `RMI-PAYFORGE-015`
 
 ## Phase 5 — Adoption and release
