@@ -17,6 +17,8 @@ const (
 	MetaPlan = "payforge_plan"
 	// MetaProduct is the one-time product an object was created for.
 	MetaProduct = "payforge_product"
+	// MetaSeller is the connected account a sale's proceeds go to.
+	MetaSeller = "payforge_seller"
 	// MetaSubject is the host's account identifier, on customers and
 	// subscriptions.
 	MetaSubject = "payforge_subject"
