@@ -8,4 +8,4 @@ require (
 	github.com/stripe/stripe-go/v87 v87.0.0
 )
 
-require github.com/shopspring/decimal v1.4.0 // indirect
+require github.com/shopspring/decimal v1.6.0 // indirect
