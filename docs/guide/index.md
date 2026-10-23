@@ -19,14 +19,14 @@ provider, which is Stripe today:
 6. [Known limitations](limitations.md): what is not covered and what has not yet
    run against real Stripe.
 
-Runnable versions of the main pieces are in [`examples/`](../../examples).
+Runnable versions of the main pieces are in [`examples/`](https://github.com/plexusone/payforge/tree/main/examples).
 
 ## What payforge does not do
 
 - It does not store anything. Your code keeps accounts, plans and processed
   events; payforge calls it through [ports](lifecycle.md#the-ports) you supply.
 - It does not enforce limits. The spec answers "may this account add one more
-  board?"; see [`examples/limits`](../../examples/limits).
+  board?"; see [`examples/limits`](https://github.com/plexusone/payforge/tree/main/examples/limits).
 - It does not talk to any provider but Stripe, though the core package knows
   nothing about Stripe and a second adapter could implement the same interfaces.
 

@@ -136,6 +136,6 @@ and are fine for tests and for a host that does not need to survive a restart.
 
 ## Putting it together
 
-[`examples/webhook`](../../examples/webhook) is the whole path: a handler that
+[`examples/webhook`](https://github.com/plexusone/payforge/tree/main/examples/webhook) is the whole path: a handler that
 verifies, calls `Handle`, and chooses the status code. Its test drives it with a
 signed request and shows a redelivery applying once.

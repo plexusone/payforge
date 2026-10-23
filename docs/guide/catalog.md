@@ -3,7 +3,7 @@
 The pricing spec is a JSON document. This page covers only what payforge reads;
 the format is described in the
 [spec repository](https://github.com/plexusone/systemspec-pricingpackaging), and
-a complete example is [`examples/catalog/pricing.json`](../../examples/catalog/pricing.json).
+a complete example is [`examples/catalog/pricing.json`](https://github.com/plexusone/payforge/blob/main/examples/catalog/pricing.json).
 
 ## What becomes what
 
@@ -67,7 +67,7 @@ The actions are `create_product`, `update_product`, `create_price`,
   `stripe.ErrDeleted`; its ID can never be used again, so the plan needs a new
   ID in the spec.
 
-The command-line version is [`examples/catalog`](../../examples/catalog); it runs
+The command-line version is [`examples/catalog`](https://github.com/plexusone/payforge/tree/main/examples/catalog); it runs
 a dry run unless given `-apply`.
 
 ## Changing the catalog
