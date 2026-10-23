@@ -43,7 +43,7 @@ configuration, other payment providers, and a command-line tool over the core.
   - Depends on: `RMI-PAYFORGE-006`
 - [x] `RMI-PAYFORGE-010` Customer portal sessions
   - Depends on: `RMI-PAYFORGE-009`
-- [ ] `RMI-PAYFORGE-011` Connect: Express accounts, onboarding links, account state and destination-charge sales with a platform fee
+- [x] `RMI-PAYFORGE-011` Connect: Express accounts, onboarding links, account state and destination-charge sales with a platform fee
   - Depends on: `RMI-PAYFORGE-009`
 - [x] `RMI-PAYFORGE-012` Webhook verification and the normalized event set, reading only stable fields
   - Depends on: `RMI-PAYFORGE-003`

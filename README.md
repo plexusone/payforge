@@ -34,8 +34,8 @@ entitlement through ports the host supplies.
 
 > **Status:** in development. The provider-neutral core and the Stripe
 > adapter's customers, plan and one-time checkout, customer portal, catalog
-> sync, webhook verification and the subscription lifecycle exist.
-> Connect follows; see the
+> sync, webhook verification, the subscription lifecycle and Connect sales
+> exist. Sale events follow; see the
 > [roadmap](docs/specs/initiatives/INIT-PAYFORGE-001/ROADMAP.md).
 
 ```go

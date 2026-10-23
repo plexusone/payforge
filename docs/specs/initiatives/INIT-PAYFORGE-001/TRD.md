@@ -132,16 +132,34 @@ server, by pointing the library's backend at it.
 
 ```go
 type Connect interface {
-    CreateAccount(ctx, Subject) (accountID string, err error)
+    CreateAccount(ctx, seller Subject, country string) (accountID string, err error)
     OnboardingLink(ctx, accountID, refreshURL, returnURL string) (string, error)
-    Account(ctx, accountID string) (Account, error)       // charges, payouts, details
+    Account(ctx, accountID string) (AccountState, error)  // charges, payouts, details
     CheckoutSale(ctx, Sale) (Session, error)              // destination charge
 }
 ```
 
-A sale is a destination charge on behalf of the seller's account: the seller
-is the merchant on the statement, and the platform fee is taken as an
-application fee. Express accounts, because the provider hosts onboarding.
+- **Accounts** are Express, because the provider hosts onboarding. Creation uses
+  an idempotency key from the app and the seller, so a repeat returns the same
+  account. Stripe cannot search accounts, so a host stores the ID. The country
+  is the seller's two-letter code and cannot be changed afterwards.
+- **A sale** is a destination charge made on the seller's behalf: the seller is
+  the merchant on the buyer's statement, the proceeds are transferred to the
+  seller's account, and the platform's fee is the application fee. The sale
+  carries the buyer, the seller's account and plan, a product from the spec and a
+  reference that makes a retry return the same session.
+- **The fee** is the seller plan's `platformFeeBps` when it sets one, else the
+  marketplace's, applied to what the buyer pays and **rounded down** to a cent.
+  The seller never receives less than the exact share and the platform never
+  takes more. A fee of zero sends no application fee. A spec with no
+  marketplace cannot create accounts or sell.
+- **A seller who cannot take charges** is refused with `ErrSellerNotReady`
+  before any checkout is made; the account is read from the provider for that,
+  so it costs one API call per sale.
+- A sale uses the same product lines as a purchase: a fixed price at its synced
+  price, a seller-set product at the amount given, which must reach the minimum.
+  Its objects carry the seller's account under `payforge_seller`.
+- Account IDs and URLs are checked before a request is made.
 
 ## Webhooks and events
 
