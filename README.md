@@ -36,7 +36,8 @@ entitlement through ports the host supplies.
 > adapter's customers, plan and one-time checkout, customer portal, catalog
 > sync, webhook verification, the subscription lifecycle, Connect sales and
 > their refund and account events exist; see the
-> [roadmap](docs/specs/initiatives/INIT-PAYFORGE-001/ROADMAP.md).
+> [roadmap](docs/specs/initiatives/INIT-PAYFORGE-001/ROADMAP.md). The
+> [user guide](docs/guide/index.md) walks through all of it.
 
 ```go
 spec, err := pricingspec.Load(f)
