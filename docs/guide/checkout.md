@@ -7,9 +7,23 @@ there; nothing about a card ever touches your server.
 client, err := stripe.New(spec, stripe.Config{SecretKey: key})
 ```
 
-`stripe.Config` takes the secret key, an optional `HTTPClient` and
-`MaxNetworkRetries` (default 2; retries reuse the idempotency key). The key is
-never included in an error. A `*stripe.Client` implements `payforge.Billing`.
+`stripe.Config` takes the secret key, an optional `HTTPClient`, `AllowedURLHosts`
+and `MaxNetworkRetries` (default 2, and zero means the default, so retries cannot
+be turned off; they reuse the idempotency key). The key is never included in an
+error. A `*stripe.Client` implements `payforge.Billing`.
+
+**Give every call a context with a deadline.** Without one a call can wait for
+the library's own timeout and its retries, which is minutes, and `Sync` makes many
+calls in a row.
+
+## URLs
+
+Success, cancel, return and refresh URLs must be `https` (or `http` for
+`localhost`), and may not carry a user name or password. Set `AllowedURLHosts` to
+your own hostnames, and a URL that names any other host is refused with
+`ErrInvalidURL`. Do that whenever a URL is built from anything a user sent:
+without it, a buyer can be sent through a genuine Stripe checkout and land on a
+page of an attacker's choosing, holding the session ID.
 
 ## A subject
 
@@ -45,10 +59,16 @@ sess, err := client.CheckoutPlan(ctx, payforge.PlanCheckout{
 - A plan with `trialDays` starts the trial **without asking for a card**, and the
   subscription is canceled at the end if the buyer added none.
 - A subject that already holds a subscription that grants its plan is refused
-  with `ErrAlreadySubscribed`, so two browser tabs cannot bill an organization
-  twice. Send that subject to the portal instead.
+  with `ErrAlreadySubscribed`. Send that subject to the portal instead. The check
+  runs before the session exists, so it stops a second checkout after the first
+  was paid, **not two open at once**: two tabs with different URLs can both
+  complete. A host that must never bill twice holds a lock per subject around
+  checkout.
 - The same request returns the same session (the idempotency key is derived from
-  the app, subject, plan, interval and URLs).
+  the app, subject, plan, interval, price and URLs). Stripe replays a key for a
+  day, so a session that was completed or has expired comes back without a URL;
+  payforge then creates a new one, and a buyer who subscribes, cancels and returns
+  the same day gets a working page.
 
 Paying does **not** change the account's plan by itself. The plan changes when
 the subscription's webhook arrives; see [the lifecycle](lifecycle.md).

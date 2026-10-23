@@ -159,7 +159,10 @@ type Connect interface {
 - A sale uses the same product lines as a purchase: a fixed price at its synced
   price, a seller-set product at the amount given, which must reach the minimum.
   Its objects carry the seller's account under `payforge_seller`.
-- Account IDs and URLs are checked before a request is made.
+- Account IDs and URLs are checked before a request is made. URLs must be https
+  (http for localhost) without credentials, and `AllowedURLHosts` limits the hosts.
+- A sale pays only an account carrying this app's `payforge_app` metadata
+  (`ErrForeignAccount`), and the seller plan that sets the fee comes from the host.
 
 ## Webhooks and events
 
@@ -251,6 +254,15 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
 - Checkout and invoice events are ignored by the lifecycle: a subscription's
   checkout and renewals are applied from its own subscription events, and a
   one-time sale is the host's own to record when its checkout completes.
+- **Connected accounts are not trusted for subscriptions or refunds.** A seller
+  controls the objects in their own account, metadata and prices included, and
+  their events arrive on the shared handler. An event carrying a connected
+  account is skipped for subscriptions and refunds; only `account.updated` is
+  taken from one, and it is applied from the provider's current state.
+- **Skips.** An event for a customer no account is known for is skipped without
+  being recorded, so its redelivery applies once the host links the customer; any
+  other skip, including a malformed event, is recorded. An event with no ID is an
+  error. The lifecycle does not serialize: the host holds a lock per account.
 - **Refunds** go to an optional `SaleSink`. Only a charge that carries a payforge
   product is a sale; a refund of a subscription's invoice, or of another app's
   charge, is skipped. The sink receives the buyer, the seller, the product, the

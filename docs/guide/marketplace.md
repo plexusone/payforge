@@ -52,6 +52,14 @@ account, and the platform fee is taken as the application fee.
   page.
 - **A seller who cannot take charges** is refused with `ErrSellerNotReady` before
   any checkout is made. This reads the account, one API call per sale.
+- **An account this app did not create** is refused with `ErrForeignAccount`. The
+  money goes to the account named, so an account ID from a request, or a wrong
+  record, cannot pay another app's seller on the same Stripe account.
+- **`SellerPlan` is trusted.** It chooses the fee, so take it from your own record
+  of the seller, never from a request.
+- For a fixed-price product the fee is computed from the spec's amount. Keep the
+  catalog [synced](catalog.md#syncing), or Stripe refuses a fee larger than a
+  lower price.
 - A spec without a marketplace cannot create accounts or sell
   (`ErrNoMarketplace`).
 - The fee is on the amount the seller set. Shipping or tax added at checkout is
@@ -95,6 +103,14 @@ type SellerSink interface {
 
 `payforgetest.Sales` and `payforgetest.Sellers` check your implementations, as
 [`payforgetest.Store`](lifecycle.md#checking-your-own-implementations) does.
+
+## Sellers outside your Stripe region
+
+`CreateAccount` requests both the `card_payments` and `transfers` capabilities,
+which is what a sale made on the seller's behalf needs. Stripe supports that for
+sellers in the platform's own region. Sellers elsewhere are onboarded under a
+different agreement with `transfers` only, and a sale on their behalf is not
+possible as written. Treat cross-border sellers as unsupported.
 
 ## Not covered
 

@@ -63,7 +63,9 @@ The actions are `create_product`, `update_product`, `create_price`,
   fixing the cause.
 - **It refuses what is not its own.** A product at Stripe whose metadata names
   another app is `stripe.ErrForeign`, and an archived one is `stripe.ErrArchived`;
-  un-archive it or choose another plan ID.
+  un-archive it or choose another plan ID. A **deleted** product is
+  `stripe.ErrDeleted`; its ID can never be used again, so the plan needs a new
+  ID in the spec.
 
 The command-line version is [`examples/catalog`](../../examples/catalog); it runs
 a dry run unless given `-apply`.

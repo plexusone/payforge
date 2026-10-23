@@ -12,7 +12,12 @@ import (
 )
 
 // Handler returns the endpoint. The lifecycle's Store and Sink are yours; set
-// its Provider to the Stripe client in production so event order cannot matter.
+// its Provider to the Stripe client in production so event order cannot matter,
+// and hold a lock per account around Handle if events can be handled at once.
+//
+// Serve it from an http.Server with ReadHeaderTimeout and ReadTimeout set: the
+// body is read before the signature is checked, so a slow sender otherwise holds
+// a connection open.
 func Handler(wh stripe.Webhook, l *payforge.Lifecycle, log *slog.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

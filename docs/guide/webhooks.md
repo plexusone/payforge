@@ -19,6 +19,11 @@ A complete handler is [`examples/webhook`](../../examples/webhook).
   it), as is a missing or malformed one.
 - **The body is limited** to 1 MiB (`MaxBytes` changes it).
 - A secret is never included in an error.
+- The body is read before the signature is checked, up to the limit, so run the
+  endpoint on a server with read timeouts (`http.Server.ReadTimeout`, or a
+  `ReadHeaderTimeout` and a reverse proxy that limits slow bodies).
+- `Livemode` is not enforced. Do not put a test-mode and a live-mode secret in
+  the same list, or test events will be accepted in production.
 
 ## The two failures
 

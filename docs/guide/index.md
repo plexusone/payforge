@@ -16,6 +16,8 @@ provider, which is Stripe today:
    account, through a store and a sink you write.
 5. [Marketplaces](marketplace.md): sellers with their own Stripe accounts, sales
    with a platform fee, refunds.
+6. [Known limitations](limitations.md): what is not covered and what has not yet
+   run against real Stripe.
 
 Runnable versions of the main pieces are in [`examples/`](../../examples).
 
