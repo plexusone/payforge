@@ -71,7 +71,7 @@ configuration, other payment providers, and a command-line tool over the core.
   - Depends on: `RMI-PAYFORGE-016`, `RMI-PAYFORGE-013`
 - [ ] `RMI-PAYFORGE-019` User guide: the catalog format, syncing prices, checkout and the portal, webhooks and the lifecycle, and writing a store and a sink
   - Depends on: `RMI-PAYFORGE-016`
-- [ ] `RMI-PAYFORGE-020` Examples: a catalog, a pricing page, a webhook handler and limit enforcement
+- [x] `RMI-PAYFORGE-020` Examples: a catalog, a pricing page, a webhook handler and limit enforcement
   - Depends on: `RMI-PAYFORGE-016`
 - [ ] `RMI-PAYFORGE-021` Opt-in live test against Stripe's test mode
   - Depends on: `RMI-PAYFORGE-013`
