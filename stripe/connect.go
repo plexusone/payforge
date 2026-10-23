@@ -10,7 +10,10 @@ import (
 	"github.com/plexusone/payforge"
 )
 
-var _ payforge.Connect = (*Client)(nil)
+var (
+	_ payforge.Connect       = (*Client)(nil)
+	_ payforge.AccountReader = (*Client)(nil)
+)
 
 // accountPattern is the shape of a connected account ID. It is checked before
 // the ID is sent, so a stray value never becomes a request to the wrong path.

@@ -32,6 +32,9 @@ type Result struct {
 	Reason string
 	// Entitlement is what was applied, for OutcomeApplied.
 	Entitlement *Entitlement
+	// Refund and Seller are what was applied for a refund or an account change.
+	Refund *SaleRefund
+	Seller *SellerAccount
 }
 
 // Lifecycle turns webhook events into entitlements. It holds no state of its own:
@@ -49,6 +52,15 @@ type Lifecycle struct {
 	// subscriptions say now. Without it the event alone decides, and an event that
 	// arrives out of order can leave a stale entitlement. Set it in production.
 	Provider SubscriptionReader
+	// Sales receives refunds of one-time sales. Without it a refund is ignored.
+	Sales SaleSink
+	// Sellers receives changes to a seller's connected account. Without it an
+	// account change is ignored.
+	Sellers SellerSink
+	// Accounts, when set, is read for a connected account's current state
+	// instead of trusting the event's, for the same reason as Provider. Set it
+	// in production.
+	Accounts AccountReader
 	// LegacyPrefixes are host metadata prefixes read as aliases for the subject
 	// and plan, as in the webhook reader.
 	LegacyPrefixes []string
@@ -66,10 +78,14 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 	}
 	switch ev.Kind {
 	case EventSubscriptionCreated, EventSubscriptionUpdated, EventSubscriptionEnded:
+	case EventRefunded:
+		return l.handleRefund(ctx, ev)
+	case EventAccountUpdated:
+		return l.handleAccount(ctx, ev)
 	case EventCheckoutCompleted, EventInvoicePaid, EventInvoiceFailed:
 		// A subscription's checkout and renewals are applied from the
-		// subscription's own events, which follow; one-time sales and refunds
-		// are the host's.
+		// subscription's own events, which follow; a one-time sale is the
+		// host's own to record when its checkout completes.
 		return Result{Outcome: OutcomeIgnored, Reason: "applied from the subscription events"}, nil
 	default:
 		return Result{Outcome: OutcomeIgnored, Reason: "not a subscription event"}, nil

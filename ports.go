@@ -55,6 +55,61 @@ type EntitlementSink interface {
 	Apply(ctx context.Context, e Entitlement) error
 }
 
+// SaleRefund is a refund of a one-time sale, such as a purchase or a
+// marketplace sale.
+//
+// RefundedCents is the total refunded so far, not this refund's share, and it
+// only grows. Apply may see events out of order, so a sink keeps the highest
+// total it has seen for a charge and treats Full as permanent. A full refund
+// ends the buyer's access to what was bought; the host keeps the data.
+type SaleRefund struct {
+	// Subject is the buyer's account. It is empty only when neither the sale nor
+	// the customer names one, and such a refund is skipped.
+	Subject string
+	// Seller is the connected account that was paid, empty for a sale without one.
+	Seller  string
+	Product string
+	// ChargeID and PaymentIntent identify the sale, to match the checkout the host
+	// recorded.
+	ChargeID, PaymentIntent string
+	AmountCents             int64
+	RefundedCents           int64
+	// Full is true when everything has been refunded.
+	Full bool
+	// EventID is the provider event that led to this.
+	EventID string
+}
+
+// SaleSink is the host's side for refunds. Like EntitlementSink, ApplyRefund may
+// be called more than once for the same event and must leave the same state.
+type SaleSink interface {
+	ApplyRefund(ctx context.Context, r SaleRefund) error
+}
+
+// SellerAccount is a seller's connected account as the provider says now. A
+// seller can sell only while ChargesEnabled, and be paid out only while
+// PayoutsEnabled; either can turn off again after onboarding.
+type SellerAccount struct {
+	// Subject is the seller's account in the host, from the account's metadata.
+	Subject          string
+	AccountID        string
+	ChargesEnabled   bool
+	PayoutsEnabled   bool
+	DetailsSubmitted bool
+	EventID          string
+}
+
+// SellerSink is the host's side for connected accounts. ApplySeller receives the
+// whole current state, so applying it twice leaves the same state.
+type SellerSink interface {
+	ApplySeller(ctx context.Context, a SellerAccount) error
+}
+
+// AccountReader reads a connected account from the provider.
+type AccountReader interface {
+	Account(ctx context.Context, accountID string) (AccountState, error)
+}
+
 // Store is the host's persistence for the lifecycle.
 type Store interface {
 	// SubjectForCustomer finds the host's account for a provider customer, for an
@@ -119,12 +174,14 @@ func (m *MemoryStore) MarkSeen(_ context.Context, eventID string) error {
 	return nil
 }
 
-// MemorySink is an EntitlementSink that keeps the latest entitlement for each
+// MemorySink is an EntitlementSink, SaleSink and SellerSink that keeps the latest entitlement for each
 // account in memory, with the history of what it was given.
 type MemorySink struct {
 	mu      sync.Mutex
 	current map[string]Entitlement
 	history []Entitlement
+	refunds map[string]SaleRefund
+	sellers map[string]SellerAccount
 }
 
 // NewMemorySink returns an empty MemorySink.
@@ -152,4 +209,49 @@ func (m *MemorySink) History() []Entitlement {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]Entitlement(nil), m.history...)
+}
+
+// ApplyRefund implements SaleSink. It keeps the highest refunded total seen for
+// a charge, and a full refund stays full.
+func (m *MemorySink) ApplyRefund(_ context.Context, r SaleRefund) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.refunds == nil {
+		m.refunds = map[string]SaleRefund{}
+	}
+	if old, ok := m.refunds[r.ChargeID]; ok {
+		if old.RefundedCents > r.RefundedCents {
+			r.RefundedCents = old.RefundedCents
+		}
+		r.Full = r.Full || old.Full
+	}
+	m.refunds[r.ChargeID] = r
+	return nil
+}
+
+// Refund returns the state kept for a charge.
+func (m *MemorySink) Refund(chargeID string) (SaleRefund, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.refunds[chargeID]
+	return r, ok
+}
+
+// ApplySeller implements SellerSink.
+func (m *MemorySink) ApplySeller(_ context.Context, a SellerAccount) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sellers == nil {
+		m.sellers = map[string]SellerAccount{}
+	}
+	m.sellers[a.AccountID] = a
+	return nil
+}
+
+// Seller returns the latest state applied for a connected account.
+func (m *MemorySink) Seller(accountID string) (SellerAccount, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.sellers[accountID]
+	return a, ok
 }
