@@ -145,6 +145,27 @@ func Sink(t *testing.T, make func(t *testing.T) (s payforge.EntitlementSink, get
 			t.Fatalf("org-2 holds %+v", b)
 		}
 	})
+	t.Run("it is safe for concurrent use", func(t *testing.T) {
+		s, get := make(t)
+		var wg sync.WaitGroup
+		for i := 0; i < 20; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				e := granted
+				e.Subject = fmt.Sprint("org-", i)
+				if err := s.Apply(ctx, e); err != nil {
+					t.Error(err)
+				}
+			}(i)
+		}
+		wg.Wait()
+		for i := 0; i < 20; i++ {
+			if got, ok := get(fmt.Sprint("org-", i)); !ok || got.Plan != "plus" {
+				t.Fatalf("org-%d holds %+v", i, got)
+			}
+		}
+	})
 }
 
 // Sales checks a payforge.SaleSink. make returns a fresh sink and a function

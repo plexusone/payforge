@@ -282,8 +282,11 @@ func TestLifecycleFindsTheAccountThroughTheStore(t *testing.T) {
 	if n := len(r.sink.History()); n != 0 {
 		t.Fatal("the sink was applied for an unknown account")
 	}
+	if seen, _ := r.store.Seen(context.Background(), "evt_1"); seen {
+		t.Fatal("an event for an unknown account was recorded, so its redelivery could never apply")
+	}
 	r.store.Link("cus_1", "org-9")
-	ev.ID = "evt_2"
+	// The provider redelivers the very same event: it was not recorded, so it applies.
 	res := r.handle(t, ev)
 	if res.Outcome != payforge.OutcomeApplied || res.Entitlement.Subject != "org-9" {
 		t.Fatalf("linked customer: %+v", res)
@@ -360,7 +363,6 @@ func TestLifecycleReportsFailuresInsteadOfSwallowingThem(t *testing.T) {
 		"mark":    {brokenStore{MemoryStore: payforge.NewMemoryStore(), markErr: boom}, nil, nil, "record event"},
 		"subject": {brokenStore{MemoryStore: payforge.NewMemoryStore(), subjectErr: boom}, nil, func(e *payforge.Event) { e.Subject = "" }, "find account"},
 		"reader":  {brokenStore{MemoryStore: payforge.NewMemoryStore()}, boom, nil, "read subscriptions"},
-		"nosub":   {brokenStore{MemoryStore: payforge.NewMemoryStore()}, nil, func(e *payforge.Event) { e.Subscription = nil }, "has no subscription"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			sink := payforge.NewMemorySink()
@@ -385,7 +387,7 @@ func TestLifecycleReportsFailuresInsteadOfSwallowingThem(t *testing.T) {
 		store := brokenStore{MemoryStore: payforge.NewMemoryStore(), markErr: boom}
 		l := &payforge.Lifecycle{Spec: load(t, "subscription-tool.json"), Store: store, Sink: payforge.NewMemorySink()}
 		ev := subEvent("evt_1", payforge.EventSubscriptionUpdated, s)
-		ev.Subject = ""
+		ev.App = "other"
 		if _, err := l.Handle(context.Background(), ev); err == nil {
 			t.Fatal("no error")
 		}
@@ -418,5 +420,78 @@ func TestMetadataHelpers(t *testing.T) {
 	}
 	if got := payforge.MetadataSubject(meta, nil); got != "" {
 		t.Errorf("subject without prefixes = %q", got)
+	}
+}
+
+func TestLifecycleRefusesAnEventWithNoID(t *testing.T) {
+	r := newRig(t)
+	ev := subEvent("", payforge.EventSubscriptionUpdated, sub("sub_1", "active", "taskboard/plus/month"))
+	if _, err := r.l.Handle(context.Background(), ev); err == nil || !strings.Contains(err.Error(), "no ID") {
+		t.Fatalf("err = %v", err)
+	}
+	// Nothing was recorded, so a second event with no ID is not a "duplicate" of the first.
+	if seen, _ := r.store.Seen(context.Background(), ""); seen {
+		t.Fatal("the empty ID was recorded")
+	}
+}
+
+func TestLifecycleSkipsAndRemembersAMalformedEvent(t *testing.T) {
+	r := newRig(t)
+	ev := subEvent("evt_1", payforge.EventSubscriptionUpdated, sub("sub_1", "active"))
+	ev.Subscription = nil
+	res := r.handle(t, ev) // no error: a retry cannot fix it, so Stripe must not redeliver for days
+	if res.Outcome != payforge.OutcomeSkipped || res.Reason == "" {
+		t.Fatalf("res = %+v", res)
+	}
+	if seen, _ := r.store.Seen(context.Background(), "evt_1"); !seen {
+		t.Fatal("a malformed event was not remembered")
+	}
+}
+
+func TestLifecycleNeverActsOnAnEventFromAConnectedAccount(t *testing.T) {
+	// A seller controls the objects in their own Stripe account, metadata and prices
+	// included. Their events arrive on the shared handler and must not change a plan.
+	r := newRig(t)
+	forged := subEvent("evt_1", payforge.EventSubscriptionCreated, sub("sub_x", "active", "taskboard/business/month"))
+	forged.Account = "acct_seller123"
+	res := r.handle(t, forged)
+	if res.Outcome != payforge.OutcomeSkipped || !strings.Contains(res.Reason, "connected account") {
+		t.Fatalf("res = %+v", res)
+	}
+	if len(r.sink.History()) != 0 || r.reader.calls != 0 {
+		t.Fatal("a connected account's event did work")
+	}
+}
+
+func TestLifecycleAPriceWithAKeyThatIsNotOursNeverFallsBackToMetadata(t *testing.T) {
+	r := newRig(t)
+	s := sub("sub_1", "active", "pro_monthly") // made by hand, with a key of its own
+	s.Metadata = map[string]string{payforge.MetaPlan: "plus"}
+	r.reader.subs = []payforge.SubscriptionState{s}
+	res := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s))
+	if res.Entitlement.Granted || res.Entitlement.Plan != "free" {
+		t.Fatalf("entitlement = %+v", res.Entitlement)
+	}
+}
+
+func TestLifecycleTheSameTierResolvesByPlanIDWhateverTheLineOrder(t *testing.T) {
+	spec := load(t, "marketplace.json")
+	// Two plans sharing a tier: the line order must not decide.
+	for i := range spec.Plans {
+		if spec.Plans[i].ID == "pro_seller" {
+			spec.Plans[i].Tier = "seller"
+		}
+	}
+	for _, keys := range [][]string{
+		{"craftmarket/seller/month", "craftmarket/pro_seller/month"},
+		{"craftmarket/pro_seller/month", "craftmarket/seller/month"},
+	} {
+		l := &payforge.Lifecycle{Spec: spec, Store: payforge.NewMemoryStore(), Sink: payforge.NewMemorySink()}
+		ev := subEvent("evt_x", payforge.EventSubscriptionCreated, sub("sub_1", "active", keys...))
+		ev.App = "craftmarket"
+		res, err := l.Handle(context.Background(), ev)
+		if err != nil || res.Entitlement.Plan != "pro_seller" {
+			t.Fatalf("%v: plan = %+v, err = %v", keys, res.Entitlement, err)
+		}
 	}
 }

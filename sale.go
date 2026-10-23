@@ -11,13 +11,16 @@ func (l *Lifecycle) handleRefund(ctx context.Context, ev Event) (Result, error) 
 	if l.Sales == nil {
 		return Result{Outcome: OutcomeIgnored, Reason: "no sale sink"}, nil
 	}
-	if ev.Refund == nil {
-		return Result{}, fmt.Errorf("payforge: %s event %s has no refund", ev.Type, ev.ID)
-	}
 	if dup, err := l.duplicate(ctx, ev); err != nil {
 		return Result{}, err
 	} else if dup {
 		return Result{Outcome: OutcomeDuplicate}, nil
+	}
+	if ev.Refund == nil {
+		return l.skip(ctx, ev, "the event carries no refund")
+	}
+	if ev.Account != "" {
+		return l.skip(ctx, ev, "event is from a connected account, not the platform")
 	}
 	if ev.App != "" && ev.App != l.Spec.App {
 		return l.skip(ctx, ev, "event is for app "+ev.App)
@@ -30,7 +33,7 @@ func (l *Lifecycle) handleRefund(ctx context.Context, ev Event) (Result, error) 
 		return Result{}, err
 	}
 	if subject == "" {
-		return l.skip(ctx, ev, "no account is known for the sale")
+		return unknownAccount("no account is known for the sale"), nil
 	}
 	r := SaleRefund{
 		Subject: subject, Seller: ev.Metadata[MetaSeller], Product: ev.Product,
@@ -54,13 +57,13 @@ func (l *Lifecycle) handleAccount(ctx context.Context, ev Event) (Result, error)
 	if l.Sellers == nil {
 		return Result{Outcome: OutcomeIgnored, Reason: "no seller sink"}, nil
 	}
-	if ev.AccountState == nil {
-		return Result{}, fmt.Errorf("payforge: %s event %s has no account", ev.Type, ev.ID)
-	}
 	if dup, err := l.duplicate(ctx, ev); err != nil {
 		return Result{}, err
 	} else if dup {
 		return Result{Outcome: OutcomeDuplicate}, nil
+	}
+	if ev.AccountState == nil {
+		return l.skip(ctx, ev, "the event carries no account")
 	}
 	if ev.App != "" && ev.App != l.Spec.App {
 		return l.skip(ctx, ev, "event is for app "+ev.App)
@@ -92,6 +95,9 @@ func (l *Lifecycle) handleAccount(ctx context.Context, ev Event) (Result, error)
 
 // duplicate reports whether the event was already processed.
 func (l *Lifecycle) duplicate(ctx context.Context, ev Event) (bool, error) {
+	if ev.ID == "" {
+		return false, fmt.Errorf("payforge: %s event has no ID", ev.Type)
+	}
 	seen, err := l.Store.Seen(ctx, ev.ID)
 	if err != nil {
 		return false, fmt.Errorf("payforge: check event: %w", err)
@@ -105,4 +111,10 @@ func (l *Lifecycle) skip(ctx context.Context, ev Event, reason string) (Result, 
 		return Result{}, fmt.Errorf("payforge: record event: %w", err)
 	}
 	return Result{Outcome: OutcomeSkipped, Reason: reason}, nil
+}
+
+// unknownAccount is a skip that is not recorded: the host may link the customer
+// to an account after this event, and the provider's redelivery should then apply.
+func unknownAccount(reason string) Result {
+	return Result{Outcome: OutcomeSkipped, Reason: reason}
 }

@@ -20,8 +20,11 @@ const (
 	// OutcomeIgnored: the event is not one the lifecycle acts on.
 	OutcomeIgnored Outcome = "ignored"
 	// OutcomeSkipped: the event is relevant but cannot be acted on, such as one
-	// for another product or for a customer no account is known for. Retrying it
+	// for another product, from a connected account, or malformed. Retrying it
 	// would not change that, so the host should acknowledge it and may log Reason.
+	// An event for a customer no account is known for is also skipped, but is not
+	// recorded, so it is applied when it is redelivered after the host links the
+	// customer.
 	OutcomeSkipped Outcome = "skipped"
 )
 
@@ -71,7 +74,14 @@ type Lifecycle struct {
 // an error with a 5xx so the provider redelivers, and everything else with a 2xx.
 //
 // An event is recorded as seen only after the sink has applied it, so a failed
-// attempt is retried and a repeated one is a no-op.
+// attempt is retried and a repeated one is a no-op. An event with no ID is an
+// error: the ID is what makes processing once possible.
+//
+// Handle does not serialize events. Two events for the same account handled at
+// the same time can apply in either order, and the later Apply may carry the
+// older state. A host that handles webhooks concurrently should hold a lock per
+// account (Entitlement.Subject) around Handle; one handler at a time per account
+// is enough.
 func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 	if l.Spec == nil || l.Store == nil || l.Sink == nil {
 		return Result{}, errors.New("payforge: lifecycle needs a spec, a store and a sink")
@@ -90,31 +100,26 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 	default:
 		return Result{Outcome: OutcomeIgnored, Reason: "not a subscription event"}, nil
 	}
-	if ev.Subscription == nil {
-		return Result{}, fmt.Errorf("payforge: %s event %s has no subscription", ev.Type, ev.ID)
-	}
-
-	if seen, err := l.Store.Seen(ctx, ev.ID); err != nil {
-		return Result{}, fmt.Errorf("payforge: check event: %w", err)
-	} else if seen {
+	if dup, err := l.duplicate(ctx, ev); err != nil {
+		return Result{}, err
+	} else if dup {
 		return Result{Outcome: OutcomeDuplicate}, nil
 	}
-	skip := func(reason string) (Result, error) {
-		if err := l.Store.MarkSeen(ctx, ev.ID); err != nil {
-			return Result{}, fmt.Errorf("payforge: record event: %w", err)
-		}
-		return Result{Outcome: OutcomeSkipped, Reason: reason}, nil
+	if ev.Subscription == nil {
+		return l.skip(ctx, ev, "the event carries no subscription")
 	}
-
+	if ev.Account != "" {
+		return l.skip(ctx, ev, "event is from a connected account, not the platform")
+	}
 	if ev.App != "" && ev.App != l.Spec.App {
-		return skip("event is for app " + ev.App)
+		return l.skip(ctx, ev, "event is for app "+ev.App)
 	}
 	subject, err := l.subject(ctx, ev)
 	if err != nil {
 		return Result{}, err
 	}
 	if subject == "" {
-		return skip("no account is known for the subscription")
+		return unknownAccount("no account is known for the subscription"), nil
 	}
 
 	subs := []SubscriptionState{*ev.Subscription}
@@ -217,14 +222,17 @@ func (l *Lifecycle) entitlement(subject string, ev Event, subs []SubscriptionSta
 // names the plan and interval for a price payforge synced, and counts only if
 // the spec has that price. A price without a key, from before payforge, is named
 // by the subscription's metadata, and counts only for a self-serve plan. A key for
-// another app, a plan or interval the spec does not have, or an arranged plan
-// resolves to nothing, so a price made by hand can never grant. With several
+// another app, a plan or interval the spec does not have, any other key, or an
+// arranged plan resolves to nothing, so a price made by hand with a key can never
+// grant. A keyless price is trusted as far as the metadata on the platform's own
+// subscriptions is, which is why events from connected accounts never reach here. With several
 // lines the highest plan wins.
 func (l *Lifecycle) planOf(s SubscriptionState) (pricingspec.Plan, bool) {
 	var best pricingspec.Plan
 	bestRank, found := 0, false
 	consider := func(p pricingspec.Plan) {
-		if r := l.Spec.TierRank(p.Tier); !found || r > bestRank {
+		// The same tier resolves by plan ID, so the order of the lines does not matter.
+		if r := l.Spec.TierRank(p.Tier); !found || r > bestRank || (r == bestRank && p.ID < best.ID) {
 			best, bestRank, found = p, r, true
 		}
 	}
@@ -234,6 +242,9 @@ func (l *Lifecycle) planOf(s SubscriptionState) (pricingspec.Plan, bool) {
 				consider(p)
 			}
 			continue
+		}
+		if it.LookupKey != "" {
+			continue // a price with a key of its own that is not ours names nothing
 		}
 		if id := MetadataPlan(s.Metadata, l.LegacyPrefixes); id != "" {
 			if p, has := l.Spec.Plan(id); has && p.SelfServe && len(p.Prices) > 0 {

@@ -100,7 +100,7 @@ func TestRefundsOfAnythingButASaleAreSkippedAndRemembered(t *testing.T) {
 	for name, mod := range map[string]func(*payforge.Event){
 		"a subscription's invoice": func(e *payforge.Event) { e.Product = "" },
 		"another app":              func(e *payforge.Event) { e.App = "other" },
-		"no known account":         func(e *payforge.Event) { e.Subject, e.CustomerID = "", "cus_unknown" },
+		"connected account":        func(e *payforge.Event) { e.Account = "acct_seller123" },
 	} {
 		ev := refundEvent("evt_"+name, 100, false)
 		mod(&ev)
@@ -225,12 +225,11 @@ func TestSaleEventsRetryAfterAFailureAndReportIt(t *testing.T) {
 	if _, err := r.l.Handle(ctx, accountEvent("evt_b", "craftmarket", "s")); err == nil {
 		t.Error("a provider failure was swallowed")
 	}
-	// An event of the right kind with no body is a malformed event, not a skip.
-	if _, err := r.l.Handle(ctx, payforge.Event{ID: "evt_x", Kind: payforge.EventRefunded}); err == nil {
-		t.Error("a refund event without a refund was accepted")
-	}
-	if _, err := r.l.Handle(ctx, payforge.Event{ID: "evt_y", Kind: payforge.EventAccountUpdated}); err == nil {
-		t.Error("an account event without an account was accepted")
+	// An event with no ID cannot be processed once.
+	for _, k := range []payforge.EventKind{payforge.EventRefunded, payforge.EventAccountUpdated} {
+		if _, err := r.l.Handle(ctx, payforge.Event{Kind: k}); err == nil {
+			t.Errorf("%s: an event with no ID was accepted", k)
+		}
 	}
 }
 
@@ -261,5 +260,47 @@ func TestSaleEventsReportStoreFailures(t *testing.T) {
 				t.Error("a skip that could not be recorded was swallowed")
 			}
 		}
+	}
+}
+
+func TestAMalformedSaleEventIsSkippedAndRemembered(t *testing.T) {
+	r := newSaleRig(t)
+	for _, k := range []payforge.EventKind{payforge.EventRefunded, payforge.EventAccountUpdated} {
+		id := "evt_" + string(k)
+		res := r.handle(t, payforge.Event{ID: id, Kind: k})
+		if res.Outcome != payforge.OutcomeSkipped || res.Reason == "" {
+			t.Errorf("%s: %+v", k, res)
+		}
+		if seen, _ := r.store.Seen(context.Background(), id); !seen {
+			t.Errorf("%s: not remembered", k)
+		}
+	}
+}
+
+func TestARefundForAnUnknownBuyerAppliesWhenRedeliveredAfterTheLink(t *testing.T) {
+	r := newSaleRig(t)
+	ev := refundEvent("evt_1", 100, false)
+	ev.Subject, ev.CustomerID = "", "cus_unknown"
+	if res := r.handle(t, ev); res.Outcome != payforge.OutcomeSkipped {
+		t.Fatalf("res = %+v", res)
+	}
+	if seen, _ := r.store.Seen(context.Background(), "evt_1"); seen {
+		t.Fatal("recorded, so the redelivery could never apply")
+	}
+	r.store.Link("cus_unknown", "buyer-7")
+	if res := r.handle(t, ev); res.Outcome != payforge.OutcomeApplied || res.Refund.Subject != "buyer-7" {
+		t.Fatalf("redelivery = %+v", res)
+	}
+}
+
+func TestARefundFromAConnectedAccountIsNeverApplied(t *testing.T) {
+	r := newSaleRig(t)
+	forged := refundEvent("evt_1", 2000, true)
+	forged.Account = "acct_seller123"
+	if res := r.handle(t, forged); res.Outcome != payforge.OutcomeSkipped {
+		t.Fatalf("res = %+v", res)
+	}
+	if _, ok := r.sink.Refund("ch_1"); ok {
+		t.Fatal("a seller's forged refund reached the sink")
 	}
 }
