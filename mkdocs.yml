@@ -1,0 +1,64 @@
+site_name: payforge
+site_description: Billing runtime for a product described by a pricing spec
+site_url: https://plexusone.github.io/payforge
+repo_url: https://github.com/plexusone/payforge
+repo_name: plexusone/payforge
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  palette:
+    # Dark mode first (PlexusOne default)
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+extra_css:
+  - https://plexusone.dev/css/plexusone-mkdocs.css
+
+# The specifications are working documents in the repository, not part of the site.
+exclude_docs: |
+  specs/
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - User guide:
+      - Overview: guide/index.md
+      - The catalog: guide/catalog.md
+      - Checkout and the portal: guide/checkout.md
+      - Webhooks: guide/webhooks.md
+      - The lifecycle: guide/lifecycle.md
+      - Marketplaces: guide/marketplace.md
+      - Known limitations: guide/limitations.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/plexusone/payforge
