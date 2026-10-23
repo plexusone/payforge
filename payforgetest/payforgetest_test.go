@@ -20,3 +20,17 @@ func TestMemorySinkConforms(t *testing.T) {
 		return s, s.Get
 	})
 }
+
+func TestMemorySinkConformsForSales(t *testing.T) {
+	payforgetest.Sales(t, func(*testing.T) (payforge.SaleSink, func(string) (payforge.SaleRefund, bool)) {
+		s := payforge.NewMemorySink()
+		return s, s.Refund
+	})
+}
+
+func TestMemorySinkConformsForSellers(t *testing.T) {
+	payforgetest.Sellers(t, func(*testing.T) (payforge.SellerSink, func(string) (payforge.SellerAccount, bool)) {
+		s := payforge.NewMemorySink()
+		return s, s.Seller
+	})
+}
