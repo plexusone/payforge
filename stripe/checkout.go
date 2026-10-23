@@ -137,37 +137,9 @@ func (c *Client) CheckoutProduct(ctx context.Context, in payforge.ProductCheckou
 	if err := checkURL(in.CancelURL); err != nil {
 		return payforge.Session{}, err
 	}
-	var product *pricingspec.Product
-	for i := range c.spec.Products {
-		if c.spec.Products[i].ID == in.Product {
-			product = &c.spec.Products[i]
-		}
-	}
-	if product == nil {
-		return payforge.Session{}, fmt.Errorf("%w: %q", payforge.ErrUnknownProduct, in.Product)
-	}
-	item := &stripesdk.CheckoutSessionCreateLineItemParams{Quantity: stripesdk.Int64(1)}
-	if product.SellerSet {
-		if in.AmountCents < product.MinAmountCents {
-			return payforge.Session{}, fmt.Errorf("%w: %d under %d", payforge.ErrBelowMinimum, in.AmountCents, product.MinAmountCents)
-		}
-		item.PriceData = &stripesdk.CheckoutSessionCreateLineItemPriceDataParams{
-			Currency:   stripesdk.String(c.spec.Currency),
-			UnitAmount: stripesdk.Int64(in.AmountCents),
-			ProductData: &stripesdk.CheckoutSessionCreateLineItemPriceDataProductDataParams{
-				Name:     stripesdk.String(product.Name),
-				Metadata: map[string]string{payforge.MetaApp: c.spec.App, payforge.MetaProduct: product.ID},
-			},
-		}
-	} else {
-		if in.AmountCents != 0 {
-			return payforge.Session{}, payforge.ErrAmountNotAllowed
-		}
-		price, err := c.priceID(ctx, payforge.ProductLookupKey(c.spec.App, product.ID))
-		if err != nil {
-			return payforge.Session{}, err
-		}
-		item.Price = stripesdk.String(price)
+	product, item, err := c.productLine(ctx, in.Product, in.AmountCents)
+	if err != nil {
+		return payforge.Session{}, err
 	}
 	customer, err := c.EnsureCustomer(ctx, in.Subject)
 	if err != nil {
@@ -197,4 +169,43 @@ func (c *Client) CheckoutProduct(ctx context.Context, in payforge.ProductCheckou
 		return payforge.Session{}, fmt.Errorf("stripe: create product checkout: %w", err)
 	}
 	return payforge.Session{ID: sess.ID, URL: sess.URL}, nil
+}
+
+// productLine finds a product in the spec and builds its checkout line: a
+// fixed-price product at its synced price, a seller-set product at the amount
+// given, which must reach the product's minimum.
+func (c *Client) productLine(ctx context.Context, id string, amount int64) (*pricingspec.Product, *stripesdk.CheckoutSessionCreateLineItemParams, error) {
+	var product *pricingspec.Product
+	for i := range c.spec.Products {
+		if c.spec.Products[i].ID == id {
+			product = &c.spec.Products[i]
+		}
+	}
+	if product == nil {
+		return nil, nil, fmt.Errorf("%w: %q", payforge.ErrUnknownProduct, id)
+	}
+	item := &stripesdk.CheckoutSessionCreateLineItemParams{Quantity: stripesdk.Int64(1)}
+	if product.SellerSet {
+		if amount < product.MinAmountCents {
+			return nil, nil, fmt.Errorf("%w: %d under %d", payforge.ErrBelowMinimum, amount, product.MinAmountCents)
+		}
+		item.PriceData = &stripesdk.CheckoutSessionCreateLineItemPriceDataParams{
+			Currency:   stripesdk.String(c.spec.Currency),
+			UnitAmount: stripesdk.Int64(amount),
+			ProductData: &stripesdk.CheckoutSessionCreateLineItemPriceDataProductDataParams{
+				Name:     stripesdk.String(product.Name),
+				Metadata: map[string]string{payforge.MetaApp: c.spec.App, payforge.MetaProduct: product.ID},
+			},
+		}
+		return product, item, nil
+	}
+	if amount != 0 {
+		return nil, nil, payforge.ErrAmountNotAllowed
+	}
+	price, err := c.priceID(ctx, payforge.ProductLookupKey(c.spec.App, product.ID))
+	if err != nil {
+		return nil, nil, err
+	}
+	item.Price = stripesdk.String(price)
+	return product, item, nil
 }
