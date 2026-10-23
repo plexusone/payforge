@@ -23,7 +23,13 @@ Anything else is a 2xx, and `res.Outcome` says what happened:
 | `OutcomeApplied` | A sink was told |
 | `OutcomeDuplicate` | Already processed; nothing changed |
 | `OutcomeIgnored` | Not an event the lifecycle acts on, or no sink for it |
-| `OutcomeSkipped` | Relevant but cannot be acted on, such as another app's event or a customer no account is known for. `Reason` says why; log it |
+| `OutcomeSkipped` | Relevant but cannot be acted on, such as another app's event, a malformed event, or one from a connected account. `Reason` says why; log it |
+
+An event for a customer **no account is known for** is skipped too, but is **not
+recorded as seen**. Stripe often delivers the webhook before your checkout
+return page has linked the customer to the account; when Stripe redelivers the
+event after you have, it applies. An event with **no ID** is an error, because the
+ID is what lets an event be processed once.
 
 An event is recorded as seen **only after the sink applied it**. A failed attempt
 is therefore retried, and a repeated one does nothing.
@@ -39,8 +45,11 @@ matter:
 - A late "deleted" for an old subscription cannot drop an account that has a new
   one.
 
-This costs one Stripe API call per subscription event. **Set `Provider` in
-production.** Without it the event alone decides, an ended subscription never
+This costs one Stripe API call per subscription event. **Serialize per account:**
+`Handle` does not lock, so two events for the same account handled at the same
+time can apply in either order, and the later `Apply` may carry the older state.
+Hold a lock per `Subject` (one handler at a time per account is enough), or give
+your sink a version check. **Set `Provider` in production.** Without it the event alone decides, an ended subscription never
 grants whatever status it carries, and an out-of-order event can leave a stale
 plan.
 
@@ -54,8 +63,15 @@ plan.
   app, a plan in the spec and an interval that plan prices. A price made by hand
   in the dashboard with the key `taskboard/enterprise/month` does not give anyone
   the arranged Enterprise plan. A subscription from before payforge, with no
-  lookup key, is named by its metadata and counts only for a self-serve plan.
-- With several lines or subscriptions, the highest tier wins.
+  lookup key, is named by its metadata and counts only for a self-serve plan; a
+  price that has some other lookup key names nothing, whatever the metadata says.
+- With several lines or subscriptions, the highest tier wins; two plans in the
+  same tier resolve by plan ID, so the order of the lines never matters.
+- **Events from a seller's own Stripe account are never acted on** for
+  subscriptions or refunds. A seller controls the objects in their own account,
+  metadata and prices included, and their events arrive on the same handler as
+  yours (that is why both secrets are configured). Only `account.updated` is
+  taken from a connected account.
 - With nothing that grants, the account is on the spec's default plan.
 
 ## The ports
