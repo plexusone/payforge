@@ -20,7 +20,8 @@ reading of Stripe. These have not been confirmed against Stripe's test mode:
 - How long Customer Search lags a creation.
 - That `transfer_lookup_key` moves a key off an archived price.
 
-An opt-in live test against test mode is on the roadmap and will settle these.
+An opt-in live test exists for these (`stripe/live_test.go`) and has **not been
+run yet**. See [Running the live test](#running-the-live-test).
 
 ## Design limits
 
@@ -45,3 +46,33 @@ An opt-in live test against test mode is on the roadmap and will settle these.
 - **In-memory ports** (`MemoryStore`, `MemorySink`) grow without bound and lose
   everything on restart. They are for tests.
 - **Stripe only.** The core is provider-neutral; there is no second adapter.
+
+## Running the live test
+
+The live test runs payforge against Stripe's **test mode**. It does nothing unless
+you set a test-mode secret key, and it refuses any key that is not `sk_test_...`:
+
+```bash
+PAYFORGE_LIVE_STRIPE_KEY=sk_test_... go test ./stripe -run Live -v
+```
+
+It uses an app name made up for the run, so it never touches objects it did not
+create, and it archives or deletes what it made when it ends (anything it could
+not remove is logged). It never runs in CI, because the variable is not set there.
+
+It checks, against the real API:
+
+- Syncing an empty account, repeating as unchanged, and a price amount that goes
+  from A to B and back to A the same day.
+- Creating a customer, and a second call with a changed email.
+- A plan checkout: a hosted session carrying our metadata, and a repeat.
+- A real subscription (made with Stripe's test card): reading it back, refusing a
+  second checkout, and sending the events Stripe made for it through the webhook
+  reader and the lifecycle, signed here with a secret of the test's own.
+- Connect: creating an Express account, a changed email, an onboarding link, and
+  refusing a sale by a seller who has not onboarded. This part is skipped on an
+  account that has not enabled Connect.
+
+Lines that begin with `OBSERVED` record behavior it does not assert, such as
+whether Customer Search had caught up. Not covered: the deleted-product case,
+refunds, and a sale that completes, which need a browser or a funded seller.
