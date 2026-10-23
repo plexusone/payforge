@@ -46,6 +46,8 @@ type fake struct {
 	products  map[string]map[string]any
 	priceObjs map[string]map[string]any
 	nextPrice int
+	// accounts holds connected accounts by ID; a missing one answers 404.
+	accounts map[string]map[string]any
 	// fail makes the named "METHOD path" answer with a Stripe error.
 	fail map[string]int
 }
@@ -53,7 +55,8 @@ type fake struct {
 func newFake(t *testing.T) (*fake, *httptest.Server) {
 	t.Helper()
 	f := &fake{t: t, prices: map[string]string{}, fail: map[string]int{},
-		products: map[string]map[string]any{}, priceObjs: map[string]map[string]any{}}
+		products: map[string]map[string]any{}, priceObjs: map[string]map[string]any{},
+		accounts: map[string]map[string]any{}}
 	srv := httptest.NewServer(f)
 	t.Cleanup(srv.Close)
 	return f, srv
@@ -111,7 +114,21 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/v1/accounts/") && r.Method == "GET" {
+		acct, ok := f.accounts[strings.TrimPrefix(r.URL.Path, "/v1/accounts/")]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"type":"invalid_request_error","code":"resource_missing","message":"No such account"}}`))
+			return
+		}
+		_ = json.NewEncoder(w).Encode(acct)
+		return
+	}
 	switch r.Method + " " + r.URL.Path {
+	case "POST /v1/accounts":
+		_, _ = w.Write([]byte(`{"id":"acct_new123","object":"account","type":"express"}`))
+	case "POST /v1/account_links":
+		_, _ = w.Write([]byte(`{"object":"account_link","url":"https://connect.example/onboard/1","expires_at":1}`))
 	case "POST /v1/products":
 		meta := map[string]any{}
 		for k, v := range form {
