@@ -24,6 +24,12 @@ type Config struct {
 	// APIURL replaces the Stripe API's base URL. It exists for tests that stand
 	// in for Stripe; leave it empty otherwise.
 	APIURL string
+	// AllowedURLHosts, when set, limits the hosts the success, cancel, refresh and
+	// return URLs may name, so a URL taken from a request cannot send a buyer from
+	// Stripe to a site of an attacker's choosing. Set it to your own hostnames.
+	// Whatever it is set to, a URL must be https, or http only for localhost, and
+	// may not carry a user name or password.
+	AllowedURLHosts []string
 	// MaxNetworkRetries is how often the library retries a request that failed
 	// for a transient reason. The library's retries reuse the idempotency key.
 	// Zero uses the library's default of 2.
@@ -32,8 +38,9 @@ type Config struct {
 
 // Client implements payforge.Billing for one spec on one Stripe account.
 type Client struct {
-	spec *pricingspec.Spec
-	sc   *stripesdk.Client
+	spec  *pricingspec.Spec
+	sc    *stripesdk.Client
+	hosts map[string]bool
 }
 
 var _ payforge.Billing = (*Client)(nil)
@@ -64,7 +71,11 @@ func New(spec *pricingspec.Spec, cfg Config) (*Client, error) {
 	if cfg.MaxNetworkRetries > 0 {
 		bc.MaxNetworkRetries = stripesdk.Int64(cfg.MaxNetworkRetries)
 	}
-	return &Client{spec: spec, sc: stripesdk.NewClient(cfg.SecretKey, stripesdk.WithBackends(stripesdk.NewBackendsWithConfig(bc)))}, nil
+	hosts := map[string]bool{}
+	for _, h := range cfg.AllowedURLHosts {
+		hosts[strings.ToLower(h)] = true
+	}
+	return &Client{spec: spec, hosts: hosts, sc: stripesdk.NewClient(cfg.SecretKey, stripesdk.WithBackends(stripesdk.NewBackendsWithConfig(bc)))}, nil
 }
 
 // Enabled reports true: a Client has a key.
@@ -84,26 +95,46 @@ func checkSubject(s payforge.Subject) error {
 	return nil
 }
 
-// checkURL requires an absolute http or https address.
-func checkURL(raw string) error {
+// checkURL requires an absolute https address, or an http one for localhost, with
+// no user name or password, and a host in AllowedURLHosts when that is set.
+func (c *Client) checkURL(raw string) error {
+	bad := func() error { return fmt.Errorf("%w: %q", payforge.ErrInvalidURL, raw) }
 	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return fmt.Errorf("%w: %q", payforge.ErrInvalidURL, raw)
+	if err != nil || u.Host == "" || u.User != nil {
+		return bad()
+	}
+	host := strings.ToLower(u.Hostname())
+	switch u.Scheme {
+	case "https":
+	case "http":
+		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+			return bad()
+		}
+	default:
+		return bad()
+	}
+	if len(c.hosts) > 0 && !c.hosts[host] {
+		return fmt.Errorf("%w: host %q is not allowed", payforge.ErrInvalidURL, host)
 	}
 	return nil
 }
 
 // withSessionID appends the placeholder Stripe replaces with the checkout
-// session's ID, unless the URL already has it.
+// session's ID, unless the URL already has it. It goes before any fragment, which
+// a server never sees.
 func withSessionID(u string) string {
 	if strings.Contains(u, "{CHECKOUT_SESSION_ID}") {
 		return u
+	}
+	frag := ""
+	if i := strings.Index(u, "#"); i >= 0 {
+		u, frag = u[:i], u[i:]
 	}
 	sep := "?"
 	if strings.Contains(u, "?") {
 		sep = "&"
 	}
-	return u + sep + "session_id={CHECKOUT_SESSION_ID}"
+	return u + sep + "session_id={CHECKOUT_SESSION_ID}" + frag
 }
 
 // priceID finds the active price for a lookup key.

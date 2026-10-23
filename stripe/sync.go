@@ -19,6 +19,10 @@ var ErrForeign = errors.New("stripe: object belongs to another app")
 // does not bring archived objects back; unarchive it or choose another plan ID.
 var ErrArchived = errors.New("stripe: product is archived")
 
+// ErrDeleted means a product was deleted at Stripe. A deleted product's ID cannot
+// be used again, so the plan needs a new ID in the spec.
+var ErrDeleted = errors.New("stripe: product was deleted")
+
 // SyncKind is what sync did, or would do, to one object.
 type SyncKind string
 
@@ -116,6 +120,9 @@ func (c *Client) syncProduct(ctx context.Context, p payforge.ProviderProduct, dr
 	if app := have.Metadata[payforge.MetaApp]; app != "" && app != c.spec.App {
 		return fmt.Errorf("%w: product %s is for %q", ErrForeign, id, app)
 	}
+	if have.Deleted {
+		return fmt.Errorf("%w: %s", ErrDeleted, id)
+	}
 	if !have.Active {
 		return fmt.Errorf("%w: %s", ErrArchived, id)
 	}
@@ -185,7 +192,14 @@ func (c *Client) syncPrice(ctx context.Context, p payforge.ProviderPrice, dryRun
 	if p.Interval != "" {
 		params.Recurring = &stripesdk.PriceCreateRecurringParams{Interval: stripesdk.String(string(p.Interval))}
 	}
-	params.SetIdempotencyKey(idemKey("price", p.LookupKey, p.Currency, fmt.Sprint(p.AmountCents), string(p.Interval), productID))
+	// The price that holds the key now is part of the idempotency key: without it,
+	// a price changed from A to B and back to A inside a day would replay the
+	// first creation of A, which moves nothing, and the key would stay on B.
+	held := ""
+	if have != nil {
+		held = have.ID
+	}
+	params.SetIdempotencyKey(idemKey("price", p.LookupKey, p.Currency, fmt.Sprint(p.AmountCents), string(p.Interval), productID, held))
 	if _, err := c.sc.V1Prices.Create(ctx, params); err != nil {
 		return fmt.Errorf("stripe: create price %s: %w", p.LookupKey, err)
 	}

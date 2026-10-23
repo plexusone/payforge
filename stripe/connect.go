@@ -54,7 +54,7 @@ func (c *Client) CreateAccount(ctx context.Context, seller payforge.Subject, cou
 	if seller.Email != "" {
 		params.Email = stripesdk.String(seller.Email)
 	}
-	params.SetIdempotencyKey("connect-account-" + c.spec.App + "-" + seller.ID)
+	params.SetIdempotencyKey(idemKey("connect-account", c.spec.App, seller.ID, country, seller.Email))
 	acct, err := c.sc.V1Accounts.Create(ctx, params)
 	if err != nil {
 		return "", fmt.Errorf("stripe: create connected account: %w", err)
@@ -71,10 +71,10 @@ func (c *Client) OnboardingLink(ctx context.Context, accountID, refreshURL, retu
 	if err := checkAccount(accountID); err != nil {
 		return "", err
 	}
-	if err := checkURL(refreshURL); err != nil {
+	if err := c.checkURL(refreshURL); err != nil {
 		return "", err
 	}
-	if err := checkURL(returnURL); err != nil {
+	if err := c.checkURL(returnURL); err != nil {
 		return "", err
 	}
 	link, err := c.sc.V1AccountLinks.Create(ctx, &stripesdk.AccountLinkCreateParams{
@@ -94,14 +94,22 @@ func (c *Client) Account(ctx context.Context, accountID string) (payforge.Accoun
 	if err := checkAccount(accountID); err != nil {
 		return payforge.AccountState{}, err
 	}
-	acct, err := c.sc.V1Accounts.GetByID(ctx, accountID, nil)
+	acct, err := c.account(ctx, accountID)
 	if err != nil {
-		return payforge.AccountState{}, fmt.Errorf("stripe: read connected account: %w", err)
+		return payforge.AccountState{}, err
 	}
 	return payforge.AccountState{
 		ID: acct.ID, ChargesEnabled: acct.ChargesEnabled,
 		PayoutsEnabled: acct.PayoutsEnabled, DetailsSubmitted: acct.DetailsSubmitted,
 	}, nil
+}
+
+func (c *Client) account(ctx context.Context, accountID string) (*stripesdk.Account, error) {
+	acct, err := c.sc.V1Accounts.GetByID(ctx, accountID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("stripe: read connected account: %w", err)
+	}
+	return acct, nil
 }
 
 // CheckoutSale starts a checkout whose proceeds go to the seller.
@@ -111,7 +119,11 @@ func (c *Client) Account(ctx context.Context, accountID string) (payforge.Accoun
 // account, and the platform's fee is taken as the application fee. The fee is
 // the seller plan's rate when it sets one, else the marketplace's, rounded
 // down to a cent. A seller whose account cannot take charges is refused with
-// payforge.ErrSellerNotReady before any checkout is made.
+// payforge.ErrSellerNotReady before any checkout is made, and an account this app
+// did not create with payforge.ErrForeignAccount. The fee follows Sale.SellerPlan,
+// so take it from your own record of the seller, never from a request. For a
+// fixed-price product the fee is computed from the spec's amount: keep the
+// catalog synced, or Stripe refuses a fee larger than a lower price.
 func (c *Client) CheckoutSale(ctx context.Context, in payforge.Sale) (payforge.Session, error) {
 	if err := checkSubject(in.Buyer); err != nil {
 		return payforge.Session{}, err
@@ -119,10 +131,10 @@ func (c *Client) CheckoutSale(ctx context.Context, in payforge.Sale) (payforge.S
 	if err := checkAccount(in.SellerAccount); err != nil {
 		return payforge.Session{}, err
 	}
-	if err := checkURL(in.SuccessURL); err != nil {
+	if err := c.checkURL(in.SuccessURL); err != nil {
 		return payforge.Session{}, err
 	}
-	if err := checkURL(in.CancelURL); err != nil {
+	if err := c.checkURL(in.CancelURL); err != nil {
 		return payforge.Session{}, err
 	}
 	bps, err := payforge.FeeBps(c.spec, in.SellerPlan)
@@ -143,11 +155,16 @@ func (c *Client) CheckoutSale(ctx context.Context, in payforge.Sale) (payforge.S
 	if err != nil {
 		return payforge.Session{}, err
 	}
-	state, err := c.Account(ctx, in.SellerAccount)
+	acct, err := c.account(ctx, in.SellerAccount)
 	if err != nil {
 		return payforge.Session{}, err
 	}
-	if !state.ChargesEnabled {
+	// Money goes to the account named, so it must be one this app created: an ID
+	// from a request or a wrong record must not pay another app's seller.
+	if acct.Metadata[payforge.MetaApp] != c.spec.App {
+		return payforge.Session{}, payforge.ErrForeignAccount
+	}
+	if !acct.ChargesEnabled {
 		return payforge.Session{}, payforge.ErrSellerNotReady
 	}
 	customer, err := c.EnsureCustomer(ctx, in.Buyer)
@@ -182,7 +199,7 @@ func (c *Client) CheckoutSale(ctx context.Context, in payforge.Sale) (payforge.S
 	}
 	if in.Reference != "" {
 		params.SetIdempotencyKey(idemKey("sale", c.spec.App, in.Buyer.ID, in.SellerAccount, product.ID, in.Reference,
-			fmt.Sprint(in.AmountCents), fmt.Sprint(fee), in.SuccessURL, in.CancelURL))
+			fmt.Sprint(in.AmountCents), fmt.Sprint(fee), linePrice(item), in.SuccessURL, in.CancelURL))
 	}
 	sess, err := c.sc.V1CheckoutSessions.Create(ctx, params)
 	if err != nil {

@@ -15,6 +15,9 @@ var (
 	ErrNoMarketplace = errors.New("payforge: the spec has no marketplace")
 	// ErrInvalidAccount means a connected account ID is empty or malformed.
 	ErrInvalidAccount = errors.New("payforge: invalid connected account")
+	// ErrForeignAccount means a connected account was not created by this app, so
+	// it is not paid.
+	ErrForeignAccount = errors.New("payforge: the connected account does not belong to this app")
 	// ErrSellerNotReady means the seller's account cannot take charges yet, so
 	// it has not finished onboarding or the provider has paused it.
 	ErrSellerNotReady = errors.New("payforge: the seller's account cannot take charges")
@@ -28,7 +31,8 @@ type Sale struct {
 	// SellerAccount is the seller's connected account ID.
 	SellerAccount string
 	// SellerPlan is the plan the seller is on, which can set its own fee. An
-	// empty or unknown plan uses the marketplace fee.
+	// empty or unknown plan uses the marketplace fee. Take it from your own record
+	// of the seller: a value from a request would let a seller choose their fee.
 	SellerPlan string
 	Product    string
 	// AmountCents follows ProductCheckout.AmountCents.

@@ -14,7 +14,8 @@ const seller = "acct_seller123"
 // ready registers the test seller that can take charges.
 func (f *fake) ready(charges bool) {
 	f.accounts[seller] = map[string]any{"id": seller, "object": "account", "charges_enabled": charges,
-		"payouts_enabled": charges, "details_submitted": charges}
+		"payouts_enabled": charges, "details_submitted": charges,
+		"metadata": map[string]any{"payforge_app": "craftmarket", "payforge_subject": "seller-1"}}
 }
 
 func saleIn(product string, amount int64) payforge.Sale {
@@ -40,7 +41,7 @@ func TestCreateAccount(t *testing.T) {
 				t.Errorf("%s = %q, want %q", k, c.Form[k], want)
 			}
 		}
-		if c.IdemKey != "connect-account-craftmarket-org-1" {
+		if !strings.HasPrefix(c.IdemKey, "connect-account-") {
 			t.Errorf("idempotency key = %q", c.IdemKey)
 		}
 	})

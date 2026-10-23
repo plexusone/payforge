@@ -14,6 +14,9 @@ import (
 // It searches by the subject's metadata first, then creates with an idempotency
 // key. Stripe's search can lag a creation by up to a minute, so the key covers
 // that gap: a second call in the meantime gets the customer the first created.
+// The key covers the name and email too, because Stripe refuses a key reused with
+// different parameters; a changed email inside that gap can therefore create a
+// second customer instead of failing.
 // A host that stores the customer ID need not call this again.
 func (c *Client) EnsureCustomer(ctx context.Context, s payforge.Subject) (string, error) {
 	if err := checkSubject(s); err != nil {
@@ -40,7 +43,7 @@ func (c *Client) EnsureCustomer(ctx context.Context, s payforge.Subject) (string
 	if s.Email != "" {
 		params.Email = stripesdk.String(s.Email)
 	}
-	params.SetIdempotencyKey("customer-" + c.spec.App + "-" + s.ID)
+	params.SetIdempotencyKey(idemKey("customer", c.spec.App, s.ID, s.Name, s.Email))
 	cust, err := c.sc.V1Customers.Create(ctx, params)
 	if err != nil {
 		return "", fmt.Errorf("stripe: create customer: %w", err)
@@ -53,7 +56,7 @@ func (c *Client) Portal(ctx context.Context, customerID, returnURL string) (stri
 	if customerID == "" {
 		return "", fmt.Errorf("%w: no customer", payforge.ErrInvalidSubject)
 	}
-	if err := checkURL(returnURL); err != nil {
+	if err := c.checkURL(returnURL); err != nil {
 		return "", err
 	}
 	sess, err := c.sc.V1BillingPortalSessions.Create(ctx, &stripesdk.BillingPortalSessionCreateParams{

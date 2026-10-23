@@ -25,17 +25,19 @@ func idemKey(kind string, parts ...string) string {
 //
 // The price is found by lookup key, so the catalog must have been synced to the
 // account. A subject that already holds a granting subscription is refused with
-// payforge.ErrAlreadySubscribed, so two browser tabs cannot bill it twice. A
-// plan with a trial starts one without asking for a card, and the subscription
-// is canceled at the end if the buyer added none.
+// payforge.ErrAlreadySubscribed. That check is made before the session exists, so
+// it stops a second checkout after the first has been paid, not two that are open
+// at once: a host that must never bill twice holds a lock per subject around
+// checkout. A plan with a trial starts one without asking for a card, and the
+// subscription is canceled at the end if the buyer added none.
 func (c *Client) CheckoutPlan(ctx context.Context, in payforge.PlanCheckout) (payforge.Session, error) {
 	if err := checkSubject(in.Subject); err != nil {
 		return payforge.Session{}, err
 	}
-	if err := checkURL(in.SuccessURL); err != nil {
+	if err := c.checkURL(in.SuccessURL); err != nil {
 		return payforge.Session{}, err
 	}
-	if err := checkURL(in.CancelURL); err != nil {
+	if err := c.checkURL(in.CancelURL); err != nil {
 		return payforge.Session{}, err
 	}
 	plan, ok := c.spec.Plan(in.Plan)
@@ -89,10 +91,30 @@ func (c *Client) CheckoutPlan(ctx context.Context, in payforge.PlanCheckout) (pa
 		}
 		params.PaymentMethodCollection = stripesdk.String("if_required")
 	}
-	params.SetIdempotencyKey(idemKey("plan", c.spec.App, in.Subject.ID, plan.ID, string(in.Interval), in.SuccessURL, in.CancelURL))
-	sess, err := c.sc.V1CheckoutSessions.Create(ctx, params)
+	key := idemKey("plan", c.spec.App, in.Subject.ID, plan.ID, string(in.Interval), price, in.SuccessURL, in.CancelURL)
+	sess, err := c.createSession(ctx, params, key)
 	if err != nil {
 		return payforge.Session{}, fmt.Errorf("stripe: create plan checkout: %w", err)
+	}
+	return sess, nil
+}
+
+// createSession creates a checkout session under an idempotency key. Stripe
+// replays a key's response for a day, and a session that was completed or has
+// expired has no URL, so a buyer who subscribes, cancels and comes back the same
+// day would be handed a dead session. In that case it creates a new one under a
+// key derived from the dead one.
+func (c *Client) createSession(ctx context.Context, params *stripesdk.CheckoutSessionCreateParams, key string) (payforge.Session, error) {
+	params.SetIdempotencyKey(key)
+	sess, err := c.sc.V1CheckoutSessions.Create(ctx, params)
+	if err != nil {
+		return payforge.Session{}, err
+	}
+	if sess.URL == "" && sess.ID != "" {
+		params.SetIdempotencyKey(idemKey("retry", key, sess.ID))
+		if sess, err = c.sc.V1CheckoutSessions.Create(ctx, params); err != nil {
+			return payforge.Session{}, err
+		}
 	}
 	return payforge.Session{ID: sess.ID, URL: sess.URL}, nil
 }
@@ -131,10 +153,10 @@ func (c *Client) CheckoutProduct(ctx context.Context, in payforge.ProductCheckou
 	if err := checkSubject(in.Subject); err != nil {
 		return payforge.Session{}, err
 	}
-	if err := checkURL(in.SuccessURL); err != nil {
+	if err := c.checkURL(in.SuccessURL); err != nil {
 		return payforge.Session{}, err
 	}
-	if err := checkURL(in.CancelURL); err != nil {
+	if err := c.checkURL(in.CancelURL); err != nil {
 		return payforge.Session{}, err
 	}
 	product, item, err := c.productLine(ctx, in.Product, in.AmountCents)
@@ -162,7 +184,7 @@ func (c *Client) CheckoutProduct(ctx context.Context, in payforge.ProductCheckou
 	}
 	if in.Reference != "" {
 		params.SetIdempotencyKey(idemKey("product", c.spec.App, in.Subject.ID, product.ID, in.Reference,
-			fmt.Sprint(in.AmountCents), in.SuccessURL, in.CancelURL))
+			fmt.Sprint(in.AmountCents), linePrice(item), in.SuccessURL, in.CancelURL))
 	}
 	sess, err := c.sc.V1CheckoutSessions.Create(ctx, params)
 	if err != nil {
@@ -208,4 +230,14 @@ func (c *Client) productLine(ctx context.Context, id string, amount int64) (*pri
 	}
 	item.Price = stripesdk.String(price)
 	return product, item, nil
+}
+
+// linePrice is the synced price a line uses, empty for a seller-set amount. A key
+// that includes it is not replayed against a different price after a sync moves
+// the lookup key.
+func linePrice(item *stripesdk.CheckoutSessionCreateLineItemParams) string {
+	if item.Price != nil {
+		return *item.Price
+	}
+	return ""
 }

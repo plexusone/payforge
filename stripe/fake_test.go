@@ -48,6 +48,12 @@ type fake struct {
 	nextPrice int
 	// accounts holds connected accounts by ID; a missing one answers 404.
 	accounts map[string]map[string]any
+	// idem holds the responses stored under idempotency keys.
+	idemMu sync.Mutex
+	idem   map[string]stored
+	// deadNext makes the next checkout session look completed: it has no URL, as
+	// Stripe's replay of a finished session does.
+	deadNext bool
 	// fail makes the named "METHOD path" answer with a Stripe error.
 	fail map[string]int
 }
@@ -62,7 +68,54 @@ func newFake(t *testing.T) (*fake, *httptest.Server) {
 	return f, srv
 }
 
+// stored is a response Stripe would replay for an idempotency key.
+type stored struct {
+	form   string
+	status int
+	body   []byte
+}
+
+// ServeHTTP enforces idempotency as Stripe does: a key reused with the same
+// parameters replays the first response, and with different parameters is an
+// idempotency_error. The library gives every POST a random key of its own, so
+// only the keys payforge sets collide.
 func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	key := r.Header.Get("Idempotency-Key")
+	if r.Method != "POST" || key == "" {
+		f.serve(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		f.t.Errorf("parse form: %v", err)
+	}
+	fp := r.PostForm.Encode()
+	f.idemMu.Lock()
+	defer f.idemMu.Unlock()
+	if old, ok := f.idem[key]; ok {
+		w.Header().Set("Content-Type", "application/json")
+		if old.form != fp {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"type":"idempotency_error","message":"Keys for idempotent requests can only be used with the same parameters they were first used with."}}`))
+			return
+		}
+		w.WriteHeader(old.status)
+		_, _ = w.Write(old.body)
+		return
+	}
+	rec := httptest.NewRecorder()
+	f.serve(rec, r)
+	if f.idem == nil {
+		f.idem = map[string]stored{}
+	}
+	f.idem[key] = stored{form: fp, status: rec.Code, body: rec.Body.Bytes()}
+	for k, v := range rec.Header() {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(rec.Code)
+	_, _ = w.Write(rec.Body.Bytes())
+}
+
+func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		f.t.Errorf("parse form: %v", err)
 	}
@@ -178,6 +231,11 @@ func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		list("/v1/subscriptions", data)
 	case "POST /v1/checkout/sessions":
+		if f.deadNext {
+			f.deadNext = false
+			_, _ = w.Write([]byte(`{"id":"cs_test_dead","object":"checkout.session","status":"complete","url":null}`))
+			return
+		}
 		_, _ = w.Write([]byte(`{"id":"cs_test_1","object":"checkout.session","url":"https://checkout.example/cs_test_1"}`))
 	case "POST /v1/billing_portal/sessions":
 		_, _ = w.Write([]byte(`{"id":"bps_1","object":"billing_portal.session","url":"https://portal.example/bps_1"}`))

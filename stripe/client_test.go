@@ -81,7 +81,7 @@ func TestEnsureCustomer(t *testing.T) {
 		if c.Form["name"] != "Acme" || c.Form["email"] != "billing@example.com" {
 			t.Fatalf("form: %v", c.Form)
 		}
-		if c.IdemKey != "customer-taskboard-org-1" {
+		if !strings.HasPrefix(c.IdemKey, "customer-") {
 			t.Fatalf("idempotency key = %q", c.IdemKey)
 		}
 		if c.Auth != "Bearer "+secretKey {
