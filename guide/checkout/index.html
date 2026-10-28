@@ -931,12 +931,14 @@ error. A <code>*stripe.Client</code> implements <code>payforge.Billing</code>.</
 the library's own timeout and its retries, which is minutes, and <code>Sync</code> makes many
 calls in a row.</p>
 <h2 id="urls">URLs<a class="headerlink" href="#urls" title="Permanent link">&para;</a></h2>
-<p>Success, cancel, return and refresh URLs must be <code>https</code> (or <code>http</code> for
-<code>localhost</code>), and may not carry a user name or password. <strong>Set
-<code>AllowedURLHosts</code> to your own hostnames</strong>: a URL that names any other host is
-refused with <code>ErrInvalidURL</code>. <code>localhost</code>, <code>127.0.0.1</code> and <code>::1</code> are always
-accepted, even when the list does not name them, so with the list empty every
-URL except one on those hosts is refused. Otherwise a URL built from anything a user sent could
+<p>Success, cancel, return and refresh URLs must be <code>https</code>, and may not carry a
+user name or password. <strong>Set <code>AllowedURLHosts</code> to your own hostnames</strong>: a URL
+that names any other host is refused with <code>ErrInvalidURL</code>. With a test-mode key,
+<code>localhost</code>, <code>127.0.0.1</code> and <code>::1</code> are also accepted, over <code>http</code> too, even when
+the list does not name them, for local development. With a live key they are
+never accepted: the client refuses a list that names one when it is made, and a
+URL on one is refused, because a live checkout that returns the buyer to their
+own machine is always a misconfiguration. Otherwise a URL built from anything a user sent could
 send a buyer through a genuine Stripe checkout to a page of an attacker's
 choosing, holding the session ID. Entries are bare hostnames, compared without
 case; a scheme, port or wildcard is refused when the client is made. A client

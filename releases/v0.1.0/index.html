@@ -1043,10 +1043,11 @@ know before adopting this release:</p>
   for, in <code>Lifecycle.LegacyPrices</code>. Metadata never names a plan. See
   <a href="../../guide/catalog/#accounts-that-already-have-objects">the catalog</a>.</li>
 <li><strong>A redirect host allowlist is required.</strong> Checkout success and cancel URLs,
-  the portal return URL and onboarding links must be https (or http for
-  localhost) and name a host in <code>stripe.Config.AllowedURLHosts</code>. <code>localhost</code>,
-  <code>127.0.0.1</code> and <code>::1</code> are always accepted, even when the list does not name
-  them, so an empty list allows only those. A client used only to sync the
+  the portal return URL and onboarding links must be https and name a host in
+  <code>stripe.Config.AllowedURLHosts</code>. With a test-mode key, <code>localhost</code>,
+  <code>127.0.0.1</code> and <code>::1</code> are also accepted, over http too, for local
+  development; with a live key they are refused, and a live client whose list
+  names one is refused when it is made. A client used only to sync the
   catalog may leave it empty. See <a href="../../guide/checkout/#urls">checkout</a>.</li>
 </ul>
 <h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
