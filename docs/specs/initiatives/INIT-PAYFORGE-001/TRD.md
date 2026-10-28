@@ -263,7 +263,10 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
 - **Skips.** An event for a customer no account is known for is skipped without
   being recorded, so its redelivery applies once the host links the customer; any
   other skip, including a malformed event, is recorded. An event with no ID is an
-  error. The lifecycle does not serialize: the host holds a lock per account.
+  error. The lifecycle serializes per account only through an optional `Locker`
+  port (`Lock(ctx, key) (unlock func(), err error)`, keyed by `LockKey(app,
+  subject)`), which the Stripe adapter also holds around a plan checkout. A plan
+  checkout expires the subject's other open plan checkouts for the app first.
 - **Refunds** go to an optional `SaleSink`. Only a charge that carries a payforge
   product is a sale; a refund of a subscription's invoice, or of another app's
   charge, is skipped. The sink receives the buyer, the seller, the product, the

@@ -46,10 +46,25 @@ matter:
   one.
 
 This costs one Stripe API call per subscription event. **Serialize per account:**
-`Handle` does not lock, so two events for the same account handled at the same
-time can apply in either order, and the later `Apply` may carry the older state.
-Hold a lock per `Subject` (one handler at a time per account is enough), or give
-your sink a version check. **Set `Provider` in production.** Without it the event alone decides, an ended subscription never
+two events for the same account handled at the same time can apply in either
+order, and the later `Apply` may carry the older state. Set `Locker` when more
+than one handler can run at once:
+
+```go
+type Locker interface {
+    Lock(ctx context.Context, key string) (unlock func(), err error)
+}
+```
+
+`Handle` holds it under `payforge.LockKey(app, subject)` from before Stripe is
+read until the event is recorded, for subscription, refund and account events.
+Implement it across your processes, for example with a Postgres advisory lock
+on a hash of the key held in a transaction, so a crashed process cannot keep it.
+Release failures are yours to log. A lock that cannot be taken makes `Handle`
+return an error, so Stripe redelivers. `payforge.MemoryLocker` serializes within
+one process. Give the same `Locker` to the Stripe client
+(`stripe.Config.Locker`) and plan checkout takes the same key, so checkout and
+webhooks for one account also run in turn. **Set `Provider` in production.** Without it the event alone decides, an ended subscription never
 grants whatever status it carries, and an out-of-order event can leave a stale
 plan.
 

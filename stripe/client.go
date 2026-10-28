@@ -32,6 +32,10 @@ type Config struct {
 	// it empty. A URL must also be https, or http only for localhost, and may not
 	// carry a user name or password.
 	AllowedURLHosts []string
+	// Locker, when set, is held per subject around a plan checkout, under the
+	// same key the lifecycle uses, so two checkouts for one subject made at once
+	// by different processes run in turn. See CheckoutPlan.
+	Locker payforge.Locker
 	// MaxNetworkRetries is how often the library retries a request that failed
 	// for a transient reason. The library's retries reuse the idempotency key.
 	// Zero uses the library's default of 2.
@@ -40,10 +44,11 @@ type Config struct {
 
 // Client implements payforge.Billing for one spec on one Stripe account.
 type Client struct {
-	spec  *pricingspec.Spec
-	sc    *stripesdk.Client
-	hosts map[string]bool
-	mode  Mode
+	spec   *pricingspec.Spec
+	sc     *stripesdk.Client
+	hosts  map[string]bool
+	mode   Mode
+	locker payforge.Locker
 }
 
 var _ payforge.Billing = (*Client)(nil)
@@ -82,7 +87,7 @@ func New(spec *pricingspec.Spec, cfg Config) (*Client, error) {
 		}
 		hosts[h] = true
 	}
-	return &Client{spec: spec, hosts: hosts, mode: KeyMode(cfg.SecretKey), sc: stripesdk.NewClient(cfg.SecretKey, stripesdk.WithBackends(stripesdk.NewBackendsWithConfig(bc)))}, nil
+	return &Client{spec: spec, hosts: hosts, mode: KeyMode(cfg.SecretKey), locker: cfg.Locker, sc: stripesdk.NewClient(cfg.SecretKey, stripesdk.WithBackends(stripesdk.NewBackendsWithConfig(bc)))}, nil
 }
 
 // Mode is the mode of the client's key. Give it to the Webhook, so events of the

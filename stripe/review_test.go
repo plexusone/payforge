@@ -233,3 +233,74 @@ func TestSyncSaysWhenAProductWasDeleted(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// keyLocker records the keys it is asked for and whether each was released.
+type keyLocker struct {
+	keys     []string
+	released int
+}
+
+func (l *keyLocker) Lock(_ context.Context, key string) (func(), error) {
+	l.keys = append(l.keys, key)
+	return func() { l.released++ }, nil
+}
+
+func TestAPlanCheckoutHoldsTheLockerPerSubject(t *testing.T) {
+	f, srv := newFake(t)
+	f.prices["taskboard/plus/month"] = "price_plus_m"
+	lk := &keyLocker{}
+	c, err := stripe.New(load(t, "subscription-tool.json"), stripe.Config{SecretKey: secretKey, APIURL: srv.URL, AllowedURLHosts: testHosts, Locker: lk})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CheckoutPlan(context.Background(), planIn("plus")); err != nil {
+		t.Fatal(err)
+	}
+	if len(lk.keys) != 1 || lk.keys[0] != payforge.LockKey("taskboard", subj.ID) || lk.released != 1 {
+		t.Fatalf("keys %v, released %d", lk.keys, lk.released)
+	}
+}
+
+func TestAPlanCheckoutExpiresTheSubjectsOtherOpenOnes(t *testing.T) {
+	ctx := context.Background()
+	f, srv := newFake(t)
+	f.prices["taskboard/plus/month"] = "price_plus_m"
+	f.customers = []string{"cus_1"}
+	f.openSessions = []map[string]any{
+		{"id": "cs_old", "object": "checkout.session", "mode": "subscription", "status": "open", "metadata": map[string]any{"payforge_app": "taskboard"}},
+		{"id": "cs_other_app", "object": "checkout.session", "mode": "subscription", "status": "open", "metadata": map[string]any{"payforge_app": "craftmarket"}},
+		{"id": "cs_purchase", "object": "checkout.session", "mode": "payment", "status": "open", "metadata": map[string]any{"payforge_app": "taskboard"}},
+	}
+	c := newClient(t, load(t, "subscription-tool.json"), srv)
+	if _, err := c.CheckoutPlan(ctx, planIn("plus")); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count("POST", "/v1/checkout/sessions/cs_old/expire"); n != 1 {
+		t.Fatalf("the open plan checkout was expired %d times", n)
+	}
+	if f.count("POST", "/v1/checkout/sessions/cs_other_app/expire")+f.count("POST", "/v1/checkout/sessions/cs_purchase/expire") != 0 {
+		t.Fatal("another app's checkout or a purchase was expired")
+	}
+	if got := f.last("GET", "/v1/checkout/sessions").Form; got["customer"] != "cus_1" || got["status"] != "open" {
+		t.Fatalf("listed %v", got)
+	}
+	// The repeat is not a replay of the first: the expired session changed its key.
+	first := f.last("POST", "/v1/checkout/sessions").IdemKey
+	if _, err := c.CheckoutPlan(ctx, planIn("plus")); err != nil {
+		t.Fatal(err)
+	}
+	if again := f.last("POST", "/v1/checkout/sessions").IdemKey; again == first {
+		t.Fatal("the key did not change after a session was expired")
+	}
+
+	// A session that cannot be expired, such as one being paid, stops the checkout.
+	f.openSessions = []map[string]any{{"id": "cs_paying", "object": "checkout.session", "mode": "subscription", "status": "open", "metadata": map[string]any{"payforge_app": "taskboard"}}}
+	f.fail["POST /v1/checkout/sessions/cs_paying/expire"] = 400
+	before := f.count("POST", "/v1/checkout/sessions")
+	if _, err := c.CheckoutPlan(ctx, planIn("plus")); err == nil {
+		t.Fatal("a checkout was made while another could not be expired")
+	}
+	if f.count("POST", "/v1/checkout/sessions") != before {
+		t.Fatal("a session was created")
+	}
+}

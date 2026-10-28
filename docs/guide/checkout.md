@@ -10,8 +10,8 @@ client, err := stripe.New(spec, stripe.Config{
 })
 ```
 
-`stripe.Config` takes the secret key, `AllowedURLHosts`, an optional `HTTPClient`
-and `MaxNetworkRetries` (default 2, and zero means the default, so retries cannot
+`stripe.Config` takes the secret key, `AllowedURLHosts`, an optional `HTTPClient`,
+an optional `Locker` and `MaxNetworkRetries` (default 2, and zero means the default, so retries cannot
 be turned off; they reuse the idempotency key). The key is never included in an
 error. A `*stripe.Client` implements `payforge.Billing`.
 
@@ -65,16 +65,19 @@ sess, err := client.CheckoutPlan(ctx, payforge.PlanCheckout{
 - A plan with `trialDays` starts the trial **without asking for a card**, and the
   subscription is canceled at the end if the buyer added none.
 - A subject that already holds a subscription that grants its plan is refused
-  with `ErrAlreadySubscribed`. Send that subject to the portal instead. The check
-  runs before the session exists, so it stops a second checkout after the first
-  was paid, **not two open at once**: two tabs with different URLs can both
-  complete. A host that must never bill twice holds a lock per subject around
-  checkout.
-- The same request returns the same session (the idempotency key is derived from
-  the app, subject, plan, interval, price and URLs). Stripe replays a key for a
-  day, so a session that was completed or has expired comes back without a URL;
-  payforge then creates a new one, and a buyer who subscribes, cancels and returns
-  the same day gets a working page.
+  with `ErrAlreadySubscribed`. Send that subject to the portal instead.
+- **Only the newest plan checkout can be paid.** Before creating a session,
+  payforge expires the subject's other open plan checkouts for the app, so two
+  tabs cannot both subscribe. If one cannot be expired, because the buyer is
+  completing it right now, the call fails and nothing is created; a retry then
+  sees the subscription. Two calls at the very same moment can still miss each
+  other unless `stripe.Config.Locker` is set, which runs them in turn per
+  subject (see [the lifecycle](lifecycle.md#subscriptions-are-decided-from-stripe-not-from-the-event)).
+- A network retry returns the same session (the idempotency key is derived from
+  the app, subject, plan, interval, price, URLs and any session just expired).
+  Stripe replays a key for a day, so a session that was completed or has expired
+  comes back without a URL; payforge then creates a new one, and a buyer who
+  subscribes, cancels and returns the same day gets a working page.
 
 Paying does **not** change the account's plan by itself. The plan changes when
 the subscription's webhook arrives; see [the lifecycle](lifecycle.md).

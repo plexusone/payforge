@@ -25,10 +25,15 @@ run yet**. See [Running the live test](#running-the-live-test).
 
 ## Design limits
 
-- **No locking.** `Lifecycle.Handle` and checkout do not serialize. Hold a lock
-  per account when events can be handled at once, and per subject around checkout
-  if a second subscription must never be possible. See
+- **Locking is the host's.** `Lifecycle.Handle` and plan checkout serialize per
+  account only through a `Locker` the host supplies (`Lifecycle.Locker`,
+  `stripe.Config.Locker`); `MemoryLocker` covers a single process. Without one,
+  events for one account handled at once can apply in either order, and two plan
+  checkouts made at the same moment can both stay open. See
   [the lifecycle](lifecycle.md#subscriptions-are-decided-from-stripe-not-from-the-event).
+- **One open plan checkout per subject.** A new plan checkout expires the
+  subject's other open plan checkouts for the app, so an abandoned tab cannot be
+  paid later. One-time purchases are not limited.
 - **One Stripe API call per subscription event, and per sale**, to read the
   provider's current state. That is the price of order not mattering.
 - **Cross-border sellers** are not supported; see
@@ -71,7 +76,8 @@ It checks, against the real API:
 - Syncing an empty account, repeating as unchanged, and a price amount that goes
   from A to B and back to A the same day.
 - Creating a customer, and a second call with a changed email.
-- A plan checkout: a hosted session carrying our metadata, and a repeat.
+- A plan checkout: a hosted session carrying our metadata, and a repeat that
+  expires the first.
 - A real subscription (made with Stripe's test card): reading it back, refusing a
   second checkout, and sending the events Stripe made for it through the webhook
   reader and the lifecycle, signed here with a secret of the test's own.

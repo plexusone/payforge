@@ -35,6 +35,16 @@ func (l *Lifecycle) handleRefund(ctx context.Context, ev Event) (Result, error) 
 	if subject == "" {
 		return unknownAccount("no account is known for the sale"), nil
 	}
+	unlock, err := l.lock(ctx, subject)
+	if err != nil {
+		return Result{}, err
+	}
+	defer unlock()
+	if dup, err := l.duplicate(ctx, ev); err != nil {
+		return Result{}, err
+	} else if dup {
+		return Result{Outcome: OutcomeDuplicate}, nil
+	}
 	r := SaleRefund{
 		Subject: subject, Seller: ev.Metadata[MetaSeller], Product: ev.Product,
 		ChargeID: ev.Refund.ChargeID, PaymentIntent: ev.Refund.PaymentIntent,
@@ -71,6 +81,16 @@ func (l *Lifecycle) handleAccount(ctx context.Context, ev Event) (Result, error)
 	// The seller is named by the metadata payforge put on the account.
 	if ev.Subject == "" {
 		return l.skip(ctx, ev, "the account was not created through payforge")
+	}
+	unlock, err := l.lock(ctx, ev.Subject)
+	if err != nil {
+		return Result{}, err
+	}
+	defer unlock()
+	if dup, err := l.duplicate(ctx, ev); err != nil {
+		return Result{}, err
+	} else if dup {
+		return Result{Outcome: OutcomeDuplicate}, nil
 	}
 	state := *ev.AccountState
 	if l.Accounts != nil {

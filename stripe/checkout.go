@@ -25,10 +25,11 @@ func idemKey(kind string, parts ...string) string {
 //
 // The price is found by lookup key, so the catalog must have been synced to the
 // account. A subject that already holds a granting subscription is refused with
-// payforge.ErrAlreadySubscribed. That check is made before the session exists, so
-// it stops a second checkout after the first has been paid, not two that are open
-// at once: a host that must never bill twice holds a lock per subject around
-// checkout. A plan with a trial starts one without asking for a card, and the
+// payforge.ErrAlreadySubscribed. Any plan checkout of this app still open for
+// the subject is expired first, so only the newest can be paid and two tabs
+// cannot both subscribe. Two checkouts made at the same moment can still both
+// miss each other unless Config.Locker is set, which serializes them per
+// subject. A plan with a trial starts one without asking for a card, and the
 // subscription is canceled at the end if the buyer added none.
 func (c *Client) CheckoutPlan(ctx context.Context, in payforge.PlanCheckout) (payforge.Session, error) {
 	if err := checkSubject(in.Subject); err != nil {
@@ -54,11 +55,20 @@ func (c *Client) CheckoutPlan(ctx context.Context, in payforge.PlanCheckout) (pa
 	if err != nil {
 		return payforge.Session{}, err
 	}
+	unlock, err := c.lock(ctx, in.Subject.ID)
+	if err != nil {
+		return payforge.Session{}, err
+	}
+	defer unlock()
 	customer, err := c.EnsureCustomer(ctx, in.Subject)
 	if err != nil {
 		return payforge.Session{}, err
 	}
 	if err := c.refuseIfSubscribed(ctx, customer); err != nil {
+		return payforge.Session{}, err
+	}
+	expired, err := c.expireOpenPlanSessions(ctx, customer)
+	if err != nil {
 		return payforge.Session{}, err
 	}
 
@@ -91,12 +101,54 @@ func (c *Client) CheckoutPlan(ctx context.Context, in payforge.PlanCheckout) (pa
 		}
 		params.PaymentMethodCollection = stripesdk.String("if_required")
 	}
-	key := idemKey("plan", c.spec.App, in.Subject.ID, plan.ID, string(in.Interval), price, in.SuccessURL, in.CancelURL)
+	// The sessions just expired are part of the key, so a repeat cannot replay
+	// the response of a session that has since been expired.
+	key := idemKey("plan", append([]string{c.spec.App, in.Subject.ID, plan.ID, string(in.Interval), price, in.SuccessURL, in.CancelURL}, expired...)...)
 	sess, err := c.createSession(ctx, params, key)
 	if err != nil {
 		return payforge.Session{}, fmt.Errorf("stripe: create plan checkout: %w", err)
 	}
 	return sess, nil
+}
+
+// lock holds the Locker for a subject, and is a no-op without one.
+func (c *Client) lock(ctx context.Context, subject string) (func(), error) {
+	if c.locker == nil {
+		return func() {}, nil
+	}
+	unlock, err := c.locker.Lock(ctx, payforge.LockKey(c.spec.App, subject))
+	if err != nil {
+		return nil, fmt.Errorf("stripe: lock subject: %w", err)
+	}
+	if unlock == nil {
+		return func() {}, nil
+	}
+	return unlock, nil
+}
+
+// expireOpenPlanSessions expires the customer's open subscription checkouts for
+// this app and returns their IDs. A session that cannot be expired, such as one
+// the buyer is completing right now, is an error: creating another could bill
+// the subject twice.
+func (c *Client) expireOpenPlanSessions(ctx context.Context, customer string) ([]string, error) {
+	var open []string
+	for s, err := range c.sc.V1CheckoutSessions.List(ctx, &stripesdk.CheckoutSessionListParams{
+		Customer: stripesdk.String(customer),
+		Status:   stripesdk.String(string(stripesdk.CheckoutSessionStatusOpen)),
+	}).All(ctx) {
+		if err != nil {
+			return nil, fmt.Errorf("stripe: list checkout sessions: %w", err)
+		}
+		if s.Mode == stripesdk.CheckoutSessionModeSubscription && s.Metadata[payforge.MetaApp] == c.spec.App {
+			open = append(open, s.ID)
+		}
+	}
+	for _, id := range open {
+		if _, err := c.sc.V1CheckoutSessions.Expire(ctx, id, nil); err != nil {
+			return nil, fmt.Errorf("stripe: expire open checkout %s: %w", id, err)
+		}
+	}
+	return open, nil
 }
 
 // createSession creates a checkout session under an idempotency key. Stripe

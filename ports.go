@@ -163,6 +163,61 @@ type SubscriptionReader interface {
 	Subscriptions(ctx context.Context, customerID string) ([]SubscriptionState, error)
 }
 
+// Locker serializes work on one account across all of the host's processes,
+// for example with a database advisory lock. Lock blocks until the lock for key
+// is held or ctx is done, and returns the function that releases it. unlock is
+// called exactly once; if releasing fails, the host's implementation logs it,
+// and must make sure the lock cannot be held forever (a lock tied to a database
+// session or transaction is released when that ends).
+//
+// The lifecycle holds it around a subscription, refund or account event, and
+// the Stripe adapter around a plan checkout, both under LockKey of the app and
+// the account, so the two also exclude each other.
+type Locker interface {
+	Lock(ctx context.Context, key string) (unlock func(), err error)
+}
+
+// LockKey is the key a Locker is asked for: one per app and account.
+func LockKey(app, subject string) string { return "payforge/" + app + "/" + subject }
+
+// MemoryLocker is a Locker for one process, for tests and for a host that runs
+// a single instance.
+type MemoryLocker struct {
+	mu    sync.Mutex
+	locks map[string]chan struct{}
+}
+
+// Lock implements Locker.
+func (m *MemoryLocker) Lock(ctx context.Context, key string) (func(), error) {
+	for {
+		m.mu.Lock()
+		if m.locks == nil {
+			m.locks = map[string]chan struct{}{}
+		}
+		held, busy := m.locks[key]
+		if !busy {
+			done := make(chan struct{})
+			m.locks[key] = done
+			m.mu.Unlock()
+			var once sync.Once
+			return func() {
+				once.Do(func() {
+					m.mu.Lock()
+					delete(m.locks, key)
+					m.mu.Unlock()
+					close(done)
+				})
+			}, nil
+		}
+		m.mu.Unlock()
+		select {
+		case <-held:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+}
+
 // MemoryStore is a Store that keeps everything in memory. It is for tests and
 // for a host that does not need persistence across restarts.
 type MemoryStore struct {

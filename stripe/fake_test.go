@@ -57,6 +57,9 @@ type fake struct {
 	// deadNext makes the next checkout session look completed: it has no URL, as
 	// Stripe's replay of a finished session does.
 	deadNext bool
+	// openSessions are the customer's open checkout sessions, listed by GET and
+	// removed when expired.
+	openSessions []map[string]any
 	// fail makes the named "METHOD path" answer with a Stripe error.
 	fail map[string]int
 }
@@ -170,6 +173,19 @@ func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if id, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/v1/checkout/sessions/"), "/expire"); ok && r.Method == "POST" {
+		kept := f.openSessions[:0]
+		for _, s := range f.openSessions {
+			if s["id"] != id {
+				kept = append(kept, s)
+			}
+		}
+		f.openSessions = kept
+		if err := json.NewEncoder(w).Encode(map[string]any{"id": id, "object": "checkout.session", "status": "expired"}); err != nil {
+			f.t.Errorf("write expired session: %v", err)
+		}
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/v1/accounts/") && r.Method == "GET" {
 		acct, ok := f.accounts[strings.TrimPrefix(r.URL.Path, "/v1/accounts/")]
 		if !ok {
@@ -240,6 +256,8 @@ func (f *fake) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		_, _ = w.Write([]byte(`{"id":"cs_test_1","object":"checkout.session","url":"https://checkout.example/cs_test_1"}`))
+	case "GET /v1/checkout/sessions":
+		list("/v1/checkout/sessions", f.openSessions)
 	case "POST /v1/billing_portal/sessions":
 		_, _ = w.Write([]byte(`{"id":"bps_1","object":"billing_portal.session","url":"https://portal.example/bps_1"}`))
 	default:

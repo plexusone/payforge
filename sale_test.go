@@ -358,3 +358,15 @@ func TestDisputesReachTheDisputeSink(t *testing.T) {
 		t.Fatalf("checkout failed: %+v", res)
 	}
 }
+
+func TestSaleEventsHoldTheLockerPerAccount(t *testing.T) {
+	r := newSaleRig(t)
+	lk := &recordingLocker{}
+	r.l.Locker = lk
+	r.handle(t, refundEvent("evt_r", 500, false))
+	r.handle(t, accountEvent("evt_a", "craftmarket", "seller-1"))
+	want := []string{payforge.LockKey("craftmarket", "buyer-1"), payforge.LockKey("craftmarket", "seller-1")}
+	if len(lk.keys) != 2 || lk.keys[0] != want[0] || lk.keys[1] != want[1] || lk.released != 2 {
+		t.Fatalf("keys %v, released %d", lk.keys, lk.released)
+	}
+}

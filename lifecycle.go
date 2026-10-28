@@ -62,6 +62,13 @@ type Lifecycle struct {
 	// Sellers receives changes to a seller's connected account. Without it an
 	// account change is ignored.
 	Sellers SellerSink
+	// Locker, when set, is held per account around each subscription, refund
+	// and account event, from before the provider is read until the event is
+	// recorded, so two events for one account handled at once by different
+	// processes apply in turn and the later one applies the newer state.
+	// Without it Handle does not serialize; set it when webhooks can be handled
+	// concurrently.
+	Locker Locker
 	// Disputes receives disputes of charges. Without it a dispute is ignored.
 	Disputes DisputeSink
 	// Accounts, when set, is read for a connected account's current state
@@ -85,11 +92,10 @@ type Lifecycle struct {
 // attempt is retried and a repeated one is a no-op. An event with no ID is an
 // error: the ID is what makes processing once possible.
 //
-// Handle does not serialize events. Two events for the same account handled at
-// the same time can apply in either order, and the later Apply may carry the
-// older state. A host that handles webhooks concurrently should hold a lock per
-// account (Entitlement.Subject) around Handle; one handler at a time per account
-// is enough.
+// Without a Locker Handle does not serialize events: two events for the same
+// account handled at the same time can apply in either order, and the later
+// Apply may carry the older state. A host that handles webhooks concurrently
+// sets Locker.
 func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 	if l.Spec == nil || l.Store == nil || l.Sink == nil {
 		return Result{}, errors.New("payforge: lifecycle needs a spec, a store and a sink")
@@ -131,6 +137,17 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 	if subject == "" {
 		return unknownAccount("no account is known for the subscription"), nil
 	}
+	unlock, err := l.lock(ctx, subject)
+	if err != nil {
+		return Result{}, err
+	}
+	defer unlock()
+	// Another handler may have processed this event while this one waited.
+	if dup, err := l.duplicate(ctx, ev); err != nil {
+		return Result{}, err
+	} else if dup {
+		return Result{Outcome: OutcomeDuplicate}, nil
+	}
 
 	subs := []SubscriptionState{*ev.Subscription}
 	if l.Provider != nil && ev.CustomerID != "" {
@@ -153,6 +170,21 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 		return Result{}, fmt.Errorf("payforge: record event: %w", err)
 	}
 	return Result{Outcome: OutcomeApplied, Entitlement: &e}, nil
+}
+
+// lock holds the Locker for an account, and is a no-op without one.
+func (l *Lifecycle) lock(ctx context.Context, subject string) (func(), error) {
+	if l.Locker == nil {
+		return func() {}, nil
+	}
+	unlock, err := l.Locker.Lock(ctx, LockKey(l.Spec.App, subject))
+	if err != nil {
+		return nil, fmt.Errorf("payforge: lock account: %w", err)
+	}
+	if unlock == nil {
+		return func() {}, nil
+	}
+	return unlock, nil
 }
 
 // subject resolves the account: the event's metadata first, then the host's

@@ -3,6 +3,7 @@ package payforge_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -515,4 +516,94 @@ func TestLifecycleTheSameTierResolvesByPlanIDWhateverTheLineOrder(t *testing.T) 
 			t.Fatalf("%v: plan = %+v, err = %v", keys, res.Entitlement, err)
 		}
 	}
+}
+
+// recordingLocker records the keys it is asked for and whether each was released.
+type recordingLocker struct {
+	keys     []string
+	released int
+	err      error
+}
+
+func (l *recordingLocker) Lock(_ context.Context, key string) (func(), error) {
+	if l.err != nil {
+		return nil, l.err
+	}
+	l.keys = append(l.keys, key)
+	return func() { l.released++ }, nil
+}
+
+func TestLifecycleHoldsTheLockerPerAccount(t *testing.T) {
+	r := newRig(t)
+	lk := &recordingLocker{}
+	r.l.Locker = lk
+	s := sub("sub_1", "active", "taskboard/plus/month")
+	r.reader.subs = []payforge.SubscriptionState{s}
+	r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s))
+	if len(lk.keys) != 1 || lk.keys[0] != payforge.LockKey("taskboard", "org-1") || lk.released != 1 {
+		t.Fatalf("keys %v, released %d", lk.keys, lk.released)
+	}
+	// A duplicate is answered before locking; an ignored event never locks.
+	r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s))
+	r.handle(t, payforge.Event{ID: "evt_2", Kind: payforge.EventInvoicePaid})
+	if len(lk.keys) != 1 {
+		t.Fatalf("locked again: %v", lk.keys)
+	}
+
+	// A lock that cannot be had is an error to retry, and nothing is recorded.
+	lk.err = errors.New("lock is down")
+	if _, err := r.l.Handle(context.Background(), subEvent("evt_3", payforge.EventSubscriptionUpdated, s)); err == nil {
+		t.Fatal("no error when the lock failed")
+	}
+	if seen, err := r.store.Seen(context.Background(), "evt_3"); err != nil || seen {
+		t.Fatalf("recorded after a failed lock: %v %v", seen, err)
+	}
+}
+
+func TestLifecycleUnderTheLockerAppliesTheNewestState(t *testing.T) {
+	r := newRig(t)
+	r.l.Locker = &payforge.MemoryLocker{}
+	s := sub("sub_1", "active", "taskboard/plus/month")
+	r.reader.subs = []payforge.SubscriptionState{s}
+	done := make(chan error)
+	for i := range 8 {
+		go func() {
+			_, err := r.l.Handle(context.Background(), subEvent(fmt.Sprintf("evt_%d", i), payforge.EventSubscriptionUpdated, s))
+			done <- err
+		}()
+	}
+	for range 8 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := len(r.sink.History()); n != 8 {
+		t.Fatalf("%d applied", n)
+	}
+}
+
+func TestMemoryLockerExcludesAndHonorsTheContext(t *testing.T) {
+	var m payforge.MemoryLocker
+	ctx := context.Background()
+	unlock, err := m.Lock(ctx, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := m.Lock(ctx, "other") // another key is free
+	if err != nil {
+		t.Fatal(err)
+	}
+	other()
+	short, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
+	defer cancel()
+	if _, err := m.Lock(short, "k"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a held key: %v", err)
+	}
+	unlock()
+	unlock() // a second release is harmless
+	again, err := m.Lock(ctx, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again()
 }
