@@ -160,7 +160,7 @@ type Connect interface {
   price, a seller-set product at the amount given, which must reach the minimum.
   Its objects carry the seller's account under `payforge_seller`.
 - Account IDs and URLs are checked before a request is made. URLs must be https
-  (http for localhost) without credentials, on a host in `AllowedURLHosts` (only localhost when it is empty).
+  without credentials, on a host in `AllowedURLHosts`; with a test-mode key loopback hosts also pass, over http too, and with a live key they never do.
 - A sale pays only an account carrying this app's `payforge_app` metadata
   (`ErrForeignAccount`), and the seller plan that sets the fee comes from the host.
 

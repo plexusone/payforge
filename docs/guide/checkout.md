@@ -21,12 +21,14 @@ calls in a row.
 
 ## URLs
 
-Success, cancel, return and refresh URLs must be `https` (or `http` for
-`localhost`), and may not carry a user name or password. **Set
-`AllowedURLHosts` to your own hostnames**: a URL that names any other host is
-refused with `ErrInvalidURL`. `localhost`, `127.0.0.1` and `::1` are always
-accepted, even when the list does not name them, so with the list empty every
-URL except one on those hosts is refused. Otherwise a URL built from anything a user sent could
+Success, cancel, return and refresh URLs must be `https`, and may not carry a
+user name or password. **Set `AllowedURLHosts` to your own hostnames**: a URL
+that names any other host is refused with `ErrInvalidURL`. With a test-mode key,
+`localhost`, `127.0.0.1` and `::1` are also accepted, over `http` too, even when
+the list does not name them, for local development. With a live key they are
+never accepted: the client refuses a list that names one when it is made, and a
+URL on one is refused, because a live checkout that returns the buyer to their
+own machine is always a misconfiguration. Otherwise a URL built from anything a user sent could
 send a buyer through a genuine Stripe checkout to a page of an attacker's
 choosing, holding the session ID. Entries are bare hostnames, compared without
 case; a scheme, port or wildcard is refused when the client is made. A client

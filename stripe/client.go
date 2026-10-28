@@ -27,11 +27,15 @@ type Config struct {
 	// AllowedURLHosts are the hosts the success, cancel, refresh and return URLs
 	// may name, so a URL taken from a request cannot send a buyer from Stripe to a
 	// site of an attacker's choosing. Set it to your own hostnames. It is required
-	// for checkout, the portal and onboarding links. localhost, 127.0.0.1 and ::1
-	// are always accepted, even when the list does not name them, so with it
-	// empty every URL but one on those hosts is refused. A client that only syncs
-	// the catalog may leave it empty. A URL must also be https, or http only for localhost, and may not
-	// carry a user name or password.
+	// for checkout, the portal and onboarding links. A client that only syncs the
+	// catalog may leave it empty. A URL must be https and may not carry a user
+	// name or password.
+	//
+	// With a test-mode key, localhost, 127.0.0.1 and ::1 are also accepted, over
+	// http too, even when the list does not name them, for local development.
+	// With a live key they are never accepted: New refuses a list that names
+	// one, and a URL on one is refused, since a live checkout that returns the
+	// buyer to their own machine is always a misconfiguration.
 	AllowedURLHosts []string
 	// Locker, when set, is held per subject around a plan checkout, under the
 	// same key the lifecycle uses, so two checkouts for one subject made at once
@@ -88,7 +92,15 @@ func New(spec *pricingspec.Spec, cfg Config) (*Client, error) {
 		}
 		hosts[h] = true
 	}
-	return &Client{spec: spec, hosts: hosts, mode: KeyMode(cfg.SecretKey), locker: cfg.Locker, sc: stripesdk.NewClient(cfg.SecretKey, stripesdk.WithBackends(stripesdk.NewBackendsWithConfig(bc)))}, nil
+	mode := KeyMode(cfg.SecretKey)
+	if mode == ModeLive {
+		for h := range hosts {
+			if isLoopback(h) {
+				return nil, fmt.Errorf("stripe: AllowedURLHosts names %q, which a live key never redirects to", h)
+			}
+		}
+	}
+	return &Client{spec: spec, hosts: hosts, mode: mode, locker: cfg.Locker, sc: stripesdk.NewClient(cfg.SecretKey, stripesdk.WithBackends(stripesdk.NewBackendsWithConfig(bc)))}, nil
 }
 
 // Mode is the mode of the client's key. Give it to the Webhook, so events of the
@@ -112,10 +124,11 @@ func checkSubject(s payforge.Subject) error {
 	return nil
 }
 
-// checkURL requires an absolute https address, or an http one for localhost, with
-// no user name or password, on localhost or a host in AllowedURLHosts. With no
-// hosts allowed only localhost passes, so a host that forgot to set them cannot
-// be used as an open redirect.
+// checkURL requires an absolute https address with no user name or password on
+// a host in AllowedURLHosts. With a test-mode key a loopback host also passes,
+// over http too, for local development; with a live key it never does. With no
+// hosts allowed nothing else passes, so a host that forgot to set them cannot be
+// used as an open redirect.
 func (c *Client) checkURL(raw string) error {
 	bad := func() error { return fmt.Errorf("%w: %q", payforge.ErrInvalidURL, raw) }
 	u, err := url.Parse(raw)
@@ -123,7 +136,10 @@ func (c *Client) checkURL(raw string) error {
 		return bad()
 	}
 	host := strings.ToLower(u.Hostname())
-	local := host == "localhost" || host == "127.0.0.1" || host == "::1"
+	local := isLoopback(host)
+	if local && c.mode != ModeTest {
+		return fmt.Errorf("%w: host %q is loopback, which a live key never redirects to", payforge.ErrInvalidURL, host)
+	}
 	switch u.Scheme {
 	case "https":
 	case "http":
@@ -141,6 +157,11 @@ func (c *Client) checkURL(raw string) error {
 	default:
 		return fmt.Errorf("%w: host %q is not allowed", payforge.ErrInvalidURL, host)
 	}
+}
+
+// isLoopback reports whether host is localhost or a loopback address.
+func isLoopback(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 // withSessionID appends the placeholder Stripe replaces with the checkout

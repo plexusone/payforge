@@ -110,7 +110,7 @@
           ]
         },
         {
-          "description": "Checkout, portal and onboarding URLs must be https (or http for localhost) and are limited to `AllowedURLHosts`; `localhost`, `127.0.0.1` and `::1` are always accepted, even when the list does not name them",
+          "description": "Checkout, portal and onboarding URLs must be https and are limited to `AllowedURLHosts`; with a test-mode key `localhost`, `127.0.0.1` and `::1` are also accepted, over http too, and with a live key they are refused, including in the list",
           "commit": "acbf1fd",
           "rmis": [
             "RMI-PAYFORGE-022"
