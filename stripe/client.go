@@ -24,11 +24,13 @@ type Config struct {
 	// APIURL replaces the Stripe API's base URL. It exists for tests that stand
 	// in for Stripe; leave it empty otherwise.
 	APIURL string
-	// AllowedURLHosts, when set, limits the hosts the success, cancel, refresh and
-	// return URLs may name, so a URL taken from a request cannot send a buyer from
-	// Stripe to a site of an attacker's choosing. Set it to your own hostnames.
-	// Whatever it is set to, a URL must be https, or http only for localhost, and
-	// may not carry a user name or password.
+	// AllowedURLHosts are the hosts the success, cancel, refresh and return URLs
+	// may name, so a URL taken from a request cannot send a buyer from Stripe to a
+	// site of an attacker's choosing. Set it to your own hostnames. It is required
+	// for checkout, the portal and onboarding links: with it empty, every URL but
+	// one on localhost is refused. A client that only syncs the catalog may leave
+	// it empty. A URL must also be https, or http only for localhost, and may not
+	// carry a user name or password.
 	AllowedURLHosts []string
 	// MaxNetworkRetries is how often the library retries a request that failed
 	// for a transient reason. The library's retries reuse the idempotency key.
@@ -73,7 +75,11 @@ func New(spec *pricingspec.Spec, cfg Config) (*Client, error) {
 	}
 	hosts := map[string]bool{}
 	for _, h := range cfg.AllowedURLHosts {
-		hosts[strings.ToLower(h)] = true
+		h = strings.ToLower(strings.TrimSpace(h))
+		if h == "" || strings.ContainsAny(h, "/:@*") {
+			return nil, fmt.Errorf("stripe: AllowedURLHosts entry %q is not a hostname", h)
+		}
+		hosts[h] = true
 	}
 	return &Client{spec: spec, hosts: hosts, sc: stripesdk.NewClient(cfg.SecretKey, stripesdk.WithBackends(stripesdk.NewBackendsWithConfig(bc)))}, nil
 }
@@ -96,7 +102,9 @@ func checkSubject(s payforge.Subject) error {
 }
 
 // checkURL requires an absolute https address, or an http one for localhost, with
-// no user name or password, and a host in AllowedURLHosts when that is set.
+// no user name or password, on localhost or a host in AllowedURLHosts. With no
+// hosts allowed only localhost passes, so a host that forgot to set them cannot
+// be used as an open redirect.
 func (c *Client) checkURL(raw string) error {
 	bad := func() error { return fmt.Errorf("%w: %q", payforge.ErrInvalidURL, raw) }
 	u, err := url.Parse(raw)
@@ -104,19 +112,24 @@ func (c *Client) checkURL(raw string) error {
 		return bad()
 	}
 	host := strings.ToLower(u.Hostname())
+	local := host == "localhost" || host == "127.0.0.1" || host == "::1"
 	switch u.Scheme {
 	case "https":
 	case "http":
-		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+		if !local {
 			return bad()
 		}
 	default:
 		return bad()
 	}
-	if len(c.hosts) > 0 && !c.hosts[host] {
+	switch {
+	case local, c.hosts[host]:
+		return nil
+	case len(c.hosts) == 0:
+		return fmt.Errorf("%w: host %q is not allowed: set Config.AllowedURLHosts", payforge.ErrInvalidURL, host)
+	default:
 		return fmt.Errorf("%w: host %q is not allowed", payforge.ErrInvalidURL, host)
 	}
-	return nil
 }
 
 // withSessionID appends the placeholder Stripe replaces with the checkout

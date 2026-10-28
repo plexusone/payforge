@@ -150,7 +150,7 @@ func TestLiveSubscriptions(t *testing.T) {
 	defer cancel()
 	l := &live{t: t, ctx: ctx, key: key, sc: stripesdk.NewClient(key), start: time.Now()}
 	spec := freshSpec(t, "subscription-tool.json")
-	c, err := stripe.New(spec, stripe.Config{SecretKey: key})
+	c, err := stripe.New(spec, stripe.Config{SecretKey: key, AllowedURLHosts: testHosts})
 	l.must(err, "new client")
 	t.Logf("app %s", spec.App)
 	t.Cleanup(func() { l.archive(spec) })
@@ -302,7 +302,7 @@ func TestLiveConnect(t *testing.T) {
 	defer cancel()
 	l := &live{t: t, ctx: ctx, key: key, sc: stripesdk.NewClient(key), start: time.Now()}
 	spec := freshSpec(t, "marketplace.json")
-	c, err := stripe.New(spec, stripe.Config{SecretKey: key})
+	c, err := stripe.New(spec, stripe.Config{SecretKey: key, AllowedURLHosts: testHosts})
 	l.must(err, "new client")
 	t.Cleanup(func() { l.archive(spec) })
 	_, err = c.Sync(ctx, false)

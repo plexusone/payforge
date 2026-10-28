@@ -62,7 +62,10 @@ With a key, the Stripe adapter implements the same interface:
 ```go
 import payforgestripe "github.com/plexusone/payforge/stripe"
 
-billing, err := payforgestripe.New(spec, payforgestripe.Config{SecretKey: key})
+billing, err := payforgestripe.New(spec, payforgestripe.Config{
+	SecretKey:       key,
+	AllowedURLHosts: []string{"app.example.com"}, // where buyers may be sent back to
+})
 if err != nil { return err }
 
 sess, err := billing.CheckoutPlan(ctx, payforge.PlanCheckout{

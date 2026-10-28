@@ -4,10 +4,13 @@ All three operations return a URL on a page hosted by Stripe. Send the buyer
 there; nothing about a card ever touches your server.
 
 ```go
-client, err := stripe.New(spec, stripe.Config{SecretKey: key})
+client, err := stripe.New(spec, stripe.Config{
+    SecretKey:       key,
+    AllowedURLHosts: []string{"app.example.com"},
+})
 ```
 
-`stripe.Config` takes the secret key, an optional `HTTPClient`, `AllowedURLHosts`
+`stripe.Config` takes the secret key, `AllowedURLHosts`, an optional `HTTPClient`
 and `MaxNetworkRetries` (default 2, and zero means the default, so retries cannot
 be turned off; they reuse the idempotency key). The key is never included in an
 error. A `*stripe.Client` implements `payforge.Billing`.
@@ -19,11 +22,14 @@ calls in a row.
 ## URLs
 
 Success, cancel, return and refresh URLs must be `https` (or `http` for
-`localhost`), and may not carry a user name or password. Set `AllowedURLHosts` to
-your own hostnames, and a URL that names any other host is refused with
-`ErrInvalidURL`. Do that whenever a URL is built from anything a user sent:
-without it, a buyer can be sent through a genuine Stripe checkout and land on a
-page of an attacker's choosing, holding the session ID.
+`localhost`), and may not carry a user name or password. **Set
+`AllowedURLHosts` to your own hostnames**: a URL that names any other host is
+refused with `ErrInvalidURL`, and with the list empty every URL except one on
+`localhost` is refused. Otherwise a URL built from anything a user sent could
+send a buyer through a genuine Stripe checkout to a page of an attacker's
+choosing, holding the session ID. Entries are bare hostnames, compared without
+case; a scheme, port or wildcard is refused when the client is made. A client
+that only [syncs the catalog](catalog.md#syncing) may leave the list empty.
 
 ## A subject
 

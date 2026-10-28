@@ -130,6 +130,41 @@ func TestURLsAreHttpsUnlessLocalAndCanBeLimitedToHosts(t *testing.T) {
 	}
 }
 
+func TestWithoutAllowedHostsOnlyLocalhostIsAccepted(t *testing.T) {
+	ctx := context.Background()
+	f, srv := newFake(t)
+	f.prices["taskboard/plus/month"] = "price_plus_m"
+	spec := load(t, "subscription-tool.json")
+	c, err := stripe.New(spec, stripe.Config{SecretKey: secretKey, APIURL: srv.URL})
+	if err != nil {
+		t.Fatalf("a client with no hosts can still be made, to sync: %v", err)
+	}
+	in := planIn("plus")
+	in.SuccessURL = "https://evil.example.net/b"
+	if _, err := c.CheckoutPlan(ctx, in); !errors.Is(err, payforge.ErrInvalidURL) || !strings.Contains(err.Error(), "AllowedURLHosts") {
+		t.Fatalf("checkout to any host with none allowed: %v", err)
+	}
+	if _, err := c.Portal(ctx, "cus_1", "https://evil.example.net/b"); !errors.Is(err, payforge.ErrInvalidURL) {
+		t.Fatalf("portal: %v", err)
+	}
+	m, err := stripe.New(load(t, "marketplace.json"), stripe.Config{SecretKey: secretKey, APIURL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.OnboardingLink(ctx, "acct_seller123", "https://evil.example.net/r", "https://evil.example.net/b"); !errors.Is(err, payforge.ErrInvalidURL) {
+		t.Fatalf("onboarding: %v", err)
+	}
+	in.SuccessURL, in.CancelURL = "http://localhost:3000/b", "http://localhost:3000/c"
+	if _, err := c.CheckoutPlan(ctx, in); err != nil {
+		t.Fatalf("localhost with none allowed: %v", err)
+	}
+	for _, bad := range []string{"", " ", "*.example.com", "https://app.example.com", "app.example.com:443"} {
+		if _, err := stripe.New(spec, stripe.Config{SecretKey: secretKey, AllowedURLHosts: []string{bad}}); err == nil {
+			t.Errorf("AllowedURLHosts %q was accepted", bad)
+		}
+	}
+}
+
 func TestTheSessionPlaceholderGoesBeforeAFragment(t *testing.T) {
 	f, srv := newFake(t)
 	f.prices["taskboard/business/month"] = "price_plus_m"

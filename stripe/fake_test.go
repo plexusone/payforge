@@ -19,6 +19,9 @@ import (
 // secretKey is an obviously fake key; tests check it never appears in errors.
 const secretKey = "sk_test_do_not_leak_this_value" //nolint:gosec // G101: a fake key for a test
 
+// testHosts are the hosts the tests' return URLs name.
+var testHosts = []string{"app.example.com"}
+
 // call is one request the fake received.
 type call struct {
 	Method, Path  string
@@ -286,7 +289,7 @@ func load(t *testing.T, name string) *pricingspec.Spec {
 
 func newClient(t *testing.T, spec *pricingspec.Spec, srv *httptest.Server) *stripe.Client {
 	t.Helper()
-	c, err := stripe.New(spec, stripe.Config{SecretKey: secretKey, APIURL: srv.URL})
+	c, err := stripe.New(spec, stripe.Config{SecretKey: secretKey, APIURL: srv.URL, AllowedURLHosts: testHosts})
 	if err != nil {
 		t.Fatal(err)
 	}

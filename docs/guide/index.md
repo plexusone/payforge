@@ -60,7 +60,7 @@ not sell anything:
 ```go
 var billing payforge.Billing = payforge.Disabled(spec)
 if key != "" {
-    billing, err = stripe.New(spec, stripe.Config{SecretKey: key})
+    billing, err = stripe.New(spec, stripe.Config{SecretKey: key, AllowedURLHosts: []string{"app.example.com"}})
     if err != nil {
         return err
     }
