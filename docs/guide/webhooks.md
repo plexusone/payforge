@@ -51,9 +51,11 @@ attack.
 |--------|---------------|---------|
 | `EventSubscriptionCreated` / `Updated` / `Ended` | `customer.subscription.*` | `Subscription`: status, every line item's price and lookup key, period end, trial end |
 | `EventCheckoutCompleted` | `checkout.session.completed`, `checkout.session.async_payment_succeeded` | `Checkout`: mode, whether `Paid`, payment intent, amount |
+| `EventCheckoutFailed` | `checkout.session.async_payment_failed` | `Checkout`, with `Paid` false |
 | `EventInvoicePaid` / `Failed` | `invoice.paid`, `invoice.payment_failed` | `Invoice` |
 | `EventAccountUpdated` | `account.updated` | `AccountState` |
 | `EventRefunded` | `charge.refunded` | `Refund` |
+| `EventDisputeOpened` / `Closed` | `charge.dispute.created`, `charge.dispute.closed` | `Dispute`: charge, payment intent, amount, reason, status |
 | `EventIgnored` | everything else, and any event of the other mode | only `ID` and `Type` |
 
 Every event also has `ID`, `Type`, `Created`, `Livemode`, and the `App`, `Subject`,
@@ -71,8 +73,9 @@ else for days.
 
 ## Registering endpoints
 
-- One endpoint for your own account's events: subscriptions, checkout, invoices,
-  refunds, and `account.updated` for your sellers' accounts.
+- One endpoint for your own account's events: subscriptions, checkout
+  (including `checkout.session.async_payment_failed`), invoices, refunds,
+  disputes, and `account.updated` for your sellers' accounts.
 - With a marketplace, a second endpoint for **events on connected accounts**,
   with its own secret. Both secrets go in `Secrets`, and
   [`CheckStartup`](index.md#free-mode) requires both.

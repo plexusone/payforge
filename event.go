@@ -22,6 +22,10 @@ const (
 	// EventCheckoutCompleted is a checkout session that finished. Paid says
 	// whether the money arrived, which a delayed payment method confirms later.
 	EventCheckoutCompleted EventKind = "checkout_completed"
+	// EventCheckoutFailed is a checkout whose delayed payment, such as a bank
+	// debit, failed after the session completed. Checkout carries it, with Paid
+	// false. A host that granted a one-time purchase on completion revokes it.
+	EventCheckoutFailed EventKind = "checkout_failed"
 	// EventSubscriptionCreated, EventSubscriptionUpdated and EventSubscriptionEnded
 	// carry the subscription's state. An ended subscription never grants.
 	EventSubscriptionCreated EventKind = "subscription_created"
@@ -34,6 +38,10 @@ const (
 	EventAccountUpdated EventKind = "account_updated"
 	// EventRefunded is a charge refunded, in full or in part.
 	EventRefunded EventKind = "refunded"
+	// EventDisputeOpened is a buyer disputing a charge with their bank (a
+	// chargeback); EventDisputeClosed is the dispute decided. Dispute carries it.
+	EventDisputeOpened EventKind = "dispute_opened"
+	EventDisputeClosed EventKind = "dispute_closed"
 	// EventIgnored is any other event. It has an ID and a Type and nothing else,
 	// so a host can acknowledge it and move on.
 	EventIgnored EventKind = "ignored"
@@ -70,6 +78,7 @@ type Event struct {
 	Invoice      *InvoiceResult
 	AccountState *AccountState
 	Refund       *RefundResult
+	Dispute      *DisputeResult
 }
 
 // CheckoutResult is a finished checkout session.
@@ -136,6 +145,21 @@ type RefundResult struct {
 	AmountCents   int64
 	RefundedCents int64
 	Full          bool
+}
+
+// DisputeResult is a disputed charge.
+type DisputeResult struct {
+	ID            string
+	ChargeID      string
+	PaymentIntent string
+	// AmountCents is the amount disputed, which the provider holds back from the
+	// account while the dispute is open.
+	AmountCents int64
+	Currency    string
+	// Reason is the provider's reason code, such as "fraudulent".
+	Reason string
+	// Status is the provider's status, such as "needs_response", "won" or "lost".
+	Status string
 }
 
 // MetadataSubject reads the host's subject from an object's metadata: payforge's

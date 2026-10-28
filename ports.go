@@ -86,6 +86,40 @@ type SaleSink interface {
 	ApplyRefund(ctx context.Context, r SaleRefund) error
 }
 
+// ChargeDispute is a dispute of a charge: a buyer asked their bank to take a
+// payment back. It names the charge and payment intent, not the buyer, because a
+// dispute carries no metadata of the sale; the host matches it to the purchase
+// or subscription it recorded for that charge.
+//
+// Open disputes withhold the amount; a host usually suspends what was bought
+// while one is open, restores it when Won, and treats Lost like a full refund.
+// Events can arrive out of order, so a sink keeps a dispute closed once it has
+// seen it closed.
+type ChargeDispute struct {
+	DisputeID     string
+	ChargeID      string
+	PaymentIntent string
+	AmountCents   int64
+	Currency      string
+	Reason        string
+	// Status is the provider's status. Closed is true once the dispute is
+	// decided, and Won or Lost says how; a closed dispute that is neither, such
+	// as an inquiry that was closed, took no money.
+	Status string
+	Closed bool
+	Won    bool
+	Lost   bool
+	// EventID is the provider event that led to this.
+	EventID string
+}
+
+// DisputeSink is the host's side for disputes. Like EntitlementSink,
+// ApplyDispute may be called more than once for the same event and must leave
+// the same state.
+type DisputeSink interface {
+	ApplyDispute(ctx context.Context, d ChargeDispute) error
+}
+
 // SellerAccount is a seller's connected account as the provider says now. A
 // seller can sell only while ChargesEnabled, and be paid out only while
 // PayoutsEnabled; either can turn off again after onboarding.
@@ -174,14 +208,16 @@ func (m *MemoryStore) MarkSeen(_ context.Context, eventID string) error {
 	return nil
 }
 
-// MemorySink is an EntitlementSink, SaleSink and SellerSink that keeps the latest entitlement for each
-// account in memory, with the history of what it was given.
+// MemorySink is an EntitlementSink, SaleSink, SellerSink and DisputeSink that
+// keeps the latest entitlement for each account in memory, with the history of
+// what it was given.
 type MemorySink struct {
-	mu      sync.Mutex
-	current map[string]Entitlement
-	history []Entitlement
-	refunds map[string]SaleRefund
-	sellers map[string]SellerAccount
+	mu       sync.Mutex
+	current  map[string]Entitlement
+	history  []Entitlement
+	refunds  map[string]SaleRefund
+	sellers  map[string]SellerAccount
+	disputes map[string]ChargeDispute
 }
 
 // NewMemorySink returns an empty MemorySink.
@@ -254,4 +290,26 @@ func (m *MemorySink) Seller(accountID string) (SellerAccount, bool) {
 	defer m.mu.Unlock()
 	a, ok := m.sellers[accountID]
 	return a, ok
+}
+
+// ApplyDispute implements DisputeSink. A closed dispute stays closed.
+func (m *MemorySink) ApplyDispute(_ context.Context, d ChargeDispute) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.disputes == nil {
+		m.disputes = map[string]ChargeDispute{}
+	}
+	if old, ok := m.disputes[d.DisputeID]; ok && old.Closed && !d.Closed {
+		return nil
+	}
+	m.disputes[d.DisputeID] = d
+	return nil
+}
+
+// Dispute returns the latest state applied for a dispute.
+func (m *MemorySink) Dispute(disputeID string) (ChargeDispute, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, ok := m.disputes[disputeID]
+	return d, ok
 }

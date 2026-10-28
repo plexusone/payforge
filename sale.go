@@ -93,6 +93,42 @@ func (l *Lifecycle) handleAccount(ctx context.Context, ev Event) (Result, error)
 	return Result{Outcome: OutcomeApplied, Seller: &a}, nil
 }
 
+// handleDispute applies a dispute of a charge. The dispute names the charge, not
+// the buyer, so the host matches it to what it recorded for that charge.
+func (l *Lifecycle) handleDispute(ctx context.Context, ev Event) (Result, error) {
+	if l.Disputes == nil {
+		return Result{Outcome: OutcomeIgnored, Reason: "no dispute sink"}, nil
+	}
+	if dup, err := l.duplicate(ctx, ev); err != nil {
+		return Result{}, err
+	} else if dup {
+		return Result{Outcome: OutcomeDuplicate}, nil
+	}
+	if ev.Dispute == nil || ev.Dispute.ID == "" {
+		return l.skip(ctx, ev, "the event carries no dispute")
+	}
+	if ev.Account != "" {
+		return l.skip(ctx, ev, "event is from a connected account, not the platform")
+	}
+	if ev.App != "" && ev.App != l.Spec.App {
+		return l.skip(ctx, ev, "event is for app "+ev.App)
+	}
+	dp := ev.Dispute
+	closed := ev.Kind == EventDisputeClosed
+	d := ChargeDispute{
+		DisputeID: dp.ID, ChargeID: dp.ChargeID, PaymentIntent: dp.PaymentIntent,
+		AmountCents: dp.AmountCents, Currency: dp.Currency, Reason: dp.Reason, Status: dp.Status,
+		Closed: closed, Won: closed && dp.Status == "won", Lost: closed && dp.Status == "lost", EventID: ev.ID,
+	}
+	if err := l.Disputes.ApplyDispute(ctx, d); err != nil {
+		return Result{}, fmt.Errorf("payforge: apply dispute: %w", err)
+	}
+	if err := l.Store.MarkSeen(ctx, ev.ID); err != nil {
+		return Result{}, fmt.Errorf("payforge: record event: %w", err)
+	}
+	return Result{Outcome: OutcomeApplied, Dispute: &d}, nil
+}
+
 // duplicate reports whether the event was already processed.
 func (l *Lifecycle) duplicate(ctx context.Context, ev Event) (bool, error) {
 	if ev.ID == "" {

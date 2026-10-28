@@ -272,6 +272,12 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
   keeps the data. The total only grows, and a sink keeps the highest it has seen
   and treats a full refund as permanent, so a late event for an earlier partial
   refund cannot reopen a sale.
+- **Disputes** (`charge.dispute.created` and `.closed`) go to an optional
+  `DisputeSink` as a `ChargeDispute` naming the charge and payment intent, since
+  a dispute carries no sale metadata; the host matches it to its own record. A
+  closed dispute says whether it was won or lost and stays closed. A delayed
+  payment that fails (`checkout.session.async_payment_failed`) is normalized as
+  `EventCheckoutFailed` and left to the host.
 - **Connected account changes** go to an optional `SellerSink`, which receives
   the whole current state: whether the account can take charges and be paid
   out, and whether the details are submitted. With an `AccountReader` (the

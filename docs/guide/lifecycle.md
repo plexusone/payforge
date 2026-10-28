@@ -111,6 +111,33 @@ An `Entitlement` carries `Subject`, `Plan`, `Granted`, `SubscribedPlan`, `Status
 `Origin` and `EventID`. `Origin` lets a host that also sets plans by hand tell
 where a change came from.
 
+## Disputes and failed payments
+
+A **dispute** (a chargeback) arrives as `EventDisputeOpened` and, once decided,
+`EventDisputeClosed`, from `charge.dispute.created` and `charge.dispute.closed`.
+Set `Disputes` to receive them; without it they are ignored.
+
+```go
+type DisputeSink interface {
+    ApplyDispute(ctx context.Context, d payforge.ChargeDispute) error
+}
+```
+
+A dispute carries no metadata of the sale, so `ChargeDispute` names the
+`ChargeID` and `PaymentIntent`, not the buyer: match it to the purchase or the
+subscription invoice you recorded for that charge. While a dispute is open the
+amount is withheld; a common policy is to suspend what was bought, restore it
+when `Won`, and treat `Lost` like a full refund. Stripe keeps billing a disputed
+subscription unless you cancel it. Events can arrive out of order, so keep a
+dispute closed once you have seen it closed. Disputes from a connected account
+are skipped.
+
+A **delayed payment that fails** (a bank debit, for example) arrives as
+`EventCheckoutFailed`, from `checkout.session.async_payment_failed`, after the
+session already completed unpaid. The lifecycle ignores it: a subscription's own
+events follow, and a one-time purchase is yours to record, so revoke it if you
+granted it on completion.
+
 ## Checking your own implementations
 
 Write your store and sink against your database, then run the conformance suites

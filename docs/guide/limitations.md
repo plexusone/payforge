@@ -38,8 +38,13 @@ run yet**. See [Running the live test](#running-the-live-test).
 - **Plan IDs are permanent.** Renaming one creates a new product and leaves the
   old one; see [the catalog](catalog.md#changing-the-catalog).
 - **Fixed-price sale fees come from the spec**, not from the price Stripe holds.
-- **One-time sales being paid** and delayed payment methods are the host's to
-  record; only refunds are applied.
+- **One-time sales being paid**, and a delayed payment failing
+  (`EventCheckoutFailed`), are the host's to record; refunds and disputes are
+  applied through their sinks.
+- **Disputes name the charge, not the buyer**: the host matches a
+  `ChargeDispute` to what it recorded for that charge, and decides whether to
+  suspend access or cancel a disputed subscription. `charge.dispute.updated` and
+  early fraud warnings are not mapped.
 - **Keyless legacy prices** grant nothing unless listed in
   `Lifecycle.LegacyPrices`, each with the plan it is for; see
   [the catalog](catalog.md#accounts-that-already-have-objects). There is no way

@@ -139,6 +139,7 @@ func (w Webhook) verify(payload []byte, header string) (stripesdk.Event, error) 
 var kinds = map[string]payforge.EventKind{
 	"checkout.session.completed":               payforge.EventCheckoutCompleted,
 	"checkout.session.async_payment_succeeded": payforge.EventCheckoutCompleted,
+	"checkout.session.async_payment_failed":    payforge.EventCheckoutFailed,
 	"customer.subscription.created":            payforge.EventSubscriptionCreated,
 	"customer.subscription.updated":            payforge.EventSubscriptionUpdated,
 	"customer.subscription.deleted":            payforge.EventSubscriptionEnded,
@@ -146,6 +147,8 @@ var kinds = map[string]payforge.EventKind{
 	"invoice.payment_failed":                   payforge.EventInvoiceFailed,
 	"account.updated":                          payforge.EventAccountUpdated,
 	"charge.refunded":                          payforge.EventRefunded,
+	"charge.dispute.created":                   payforge.EventDisputeOpened,
+	"charge.dispute.closed":                    payforge.EventDisputeClosed,
 }
 
 // ref is a field that is an ID, or an expanded object that has one.
@@ -222,6 +225,10 @@ type rawObject struct {
 	Amount         int64 `json:"amount"`
 	AmountRefunded int64 `json:"amount_refunded"`
 	Refunded       bool  `json:"refunded"`
+
+	// dispute
+	Charge ref    `json:"charge"`
+	Reason string `json:"reason"`
 }
 
 func unix(sec int64) time.Time {
@@ -257,7 +264,7 @@ func (w Webhook) fill(out *payforge.Event, raw json.RawMessage) error {
 	out.Product = meta[payforge.MetaProduct]
 
 	switch out.Kind {
-	case payforge.EventCheckoutCompleted:
+	case payforge.EventCheckoutCompleted, payforge.EventCheckoutFailed:
 		out.Checkout = &payforge.CheckoutResult{
 			SessionID: o.ID, Mode: o.Mode,
 			Paid:           o.PaymentStatus == "paid" || o.PaymentStatus == "no_payment_required",
@@ -304,6 +311,11 @@ func (w Webhook) fill(out *payforge.Event, raw json.RawMessage) error {
 		out.Refund = &payforge.RefundResult{
 			ChargeID: o.ID, PaymentIntent: string(o.PaymentIntent), AmountCents: o.Amount, RefundedCents: o.AmountRefunded,
 			Full: o.Refunded || (o.Amount > 0 && o.AmountRefunded >= o.Amount),
+		}
+	case payforge.EventDisputeOpened, payforge.EventDisputeClosed:
+		out.Dispute = &payforge.DisputeResult{
+			ID: o.ID, ChargeID: string(o.Charge), PaymentIntent: string(o.PaymentIntent),
+			AmountCents: o.Amount, Currency: o.Currency, Reason: o.Reason, Status: o.Status,
 		}
 	}
 	return nil

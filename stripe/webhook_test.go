@@ -291,6 +291,29 @@ func TestWebhookConnectAccountAndRefund(t *testing.T) {
 	}
 }
 
+func TestWebhookAsyncPaymentFailedAndDisputes(t *testing.T) {
+	ev := parse(t, wh(), event("evt_f", "checkout.session.async_payment_failed", "", `{"id":"cs_4","mode":"payment","payment_status":"unpaid",
+	  "payment_intent":"pi_4","metadata":{"payforge_app":"craftmarket","payforge_product":"sample_pack","payforge_subject":"org-1"}}`))
+	if ev.Kind != payforge.EventCheckoutFailed || ev.Checkout == nil || ev.Checkout.Paid || ev.Checkout.SessionID != "cs_4" || ev.Subject != "org-1" {
+		t.Fatalf("async failure: %+v", ev)
+	}
+	for typ, kind := range map[string]payforge.EventKind{
+		"charge.dispute.created": payforge.EventDisputeOpened,
+		"charge.dispute.closed":  payforge.EventDisputeClosed,
+	} {
+		ev := parse(t, wh(), event("evt_d", typ, "", `{"id":"dp_1","object":"dispute","amount":2000,"currency":"usd",
+		  "charge":"ch_1","payment_intent":{"id":"pi_1"},"reason":"fraudulent","status":"lost","metadata":{}}`))
+		d := ev.Dispute
+		if ev.Kind != kind || d == nil {
+			t.Fatalf("%s: %+v", typ, ev)
+		}
+		if d.ID != "dp_1" || d.ChargeID != "ch_1" || d.PaymentIntent != "pi_1" || d.AmountCents != 2000 ||
+			d.Currency != "usd" || d.Reason != "fraudulent" || d.Status != "lost" {
+			t.Errorf("%s: dispute = %+v", typ, d)
+		}
+	}
+}
+
 func TestWebhookIgnoresWhatItDoesNotUse(t *testing.T) {
 	ev := parse(t, wh(), event("evt_x", "customer.created", "", `{"id":"cus_1","metadata":{"payforge_app":"taskboard"}}`))
 	if ev.Kind != payforge.EventIgnored || ev.ID != "evt_x" || ev.Type != "customer.created" {

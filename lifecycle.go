@@ -35,9 +35,11 @@ type Result struct {
 	Reason string
 	// Entitlement is what was applied, for OutcomeApplied.
 	Entitlement *Entitlement
-	// Refund and Seller are what was applied for a refund or an account change.
-	Refund *SaleRefund
-	Seller *SellerAccount
+	// Refund, Seller and Dispute are what was applied for a refund, an account
+	// change or a dispute.
+	Refund  *SaleRefund
+	Seller  *SellerAccount
+	Dispute *ChargeDispute
 }
 
 // Lifecycle turns webhook events into entitlements. It holds no state of its own:
@@ -60,6 +62,8 @@ type Lifecycle struct {
 	// Sellers receives changes to a seller's connected account. Without it an
 	// account change is ignored.
 	Sellers SellerSink
+	// Disputes receives disputes of charges. Without it a dispute is ignored.
+	Disputes DisputeSink
 	// Accounts, when set, is read for a connected account's current state
 	// instead of trusting the event's, for the same reason as Provider. Set it
 	// in production.
@@ -96,7 +100,9 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 		return l.handleRefund(ctx, ev)
 	case EventAccountUpdated:
 		return l.handleAccount(ctx, ev)
-	case EventCheckoutCompleted, EventInvoicePaid, EventInvoiceFailed:
+	case EventDisputeOpened, EventDisputeClosed:
+		return l.handleDispute(ctx, ev)
+	case EventCheckoutCompleted, EventCheckoutFailed, EventInvoicePaid, EventInvoiceFailed:
 		// A subscription's checkout and renewals are applied from the
 		// subscription's own events, which follow; a one-time sale is the
 		// host's own to record when its checkout completes.
