@@ -16,6 +16,8 @@
         <link rel="prev" href="../marketplace/">
       
       
+        <link rel="next" href="../../releases/">
+      
       
         
       
@@ -596,10 +598,166 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#running-the-live-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the live test
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
       
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/v0.1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v0.1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -660,6 +818,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#running-the-live-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the live test
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -699,13 +868,19 @@ reading of Stripe. These have not been confirmed against Stripe's test mode:</p>
 <li>How long Customer Search lags a creation.</li>
 <li>That <code>transfer_lookup_key</code> moves a key off an archived price.</li>
 </ul>
-<p>An opt-in live test against test mode is on the roadmap and will settle these.</p>
+<p>An opt-in live test exists for these (<code>stripe/live_test.go</code>) and has <strong>not been
+run yet</strong>. See <a href="#running-the-live-test">Running the live test</a>.</p>
 <h2 id="design-limits">Design limits<a class="headerlink" href="#design-limits" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>No locking.</strong> <code>Lifecycle.Handle</code> and checkout do not serialize. Hold a lock
-  per account when events can be handled at once, and per subject around checkout
-  if a second subscription must never be possible. See
+<li><strong>Locking is the host's.</strong> <code>Lifecycle.Handle</code> and plan checkout serialize per
+  account only through a <code>Locker</code> the host supplies (<code>Lifecycle.Locker</code>,
+  <code>stripe.Config.Locker</code>); <code>MemoryLocker</code> covers a single process. Without one,
+  events for one account handled at once can apply in either order, and two plan
+  checkouts made at the same moment can both stay open. See
   <a href="../lifecycle/#subscriptions-are-decided-from-stripe-not-from-the-event">the lifecycle</a>.</li>
+<li><strong>One open plan checkout per subject.</strong> A new plan checkout expires the
+  subject's other open plan checkouts for the app, so an abandoned tab cannot be
+  paid later. One-time purchases are not limited.</li>
 <li><strong>One Stripe API call per subscription event, and per sale</strong>, to read the
   provider's current state. That is the price of order not mattering.</li>
 <li><strong>Cross-border sellers</strong> are not supported; see
@@ -715,15 +890,46 @@ reading of Stripe. These have not been confirmed against Stripe's test mode:</p>
 <li><strong>Plan IDs are permanent.</strong> Renaming one creates a new product and leaves the
   old one; see <a href="../catalog/#changing-the-catalog">the catalog</a>.</li>
 <li><strong>Fixed-price sale fees come from the spec</strong>, not from the price Stripe holds.</li>
-<li><strong>One-time sales being paid</strong> and delayed payment methods are the host's to
-  record; only refunds are applied.</li>
-<li><strong>Keyless legacy prices</strong> are trusted through the metadata on the platform's own
-  subscriptions. Anyone who can write that metadata can name a self-serve plan for
-  a subscription with a keyless price.</li>
+<li><strong>One-time sales being paid</strong>, and a delayed payment failing
+  (<code>EventCheckoutFailed</code>), are the host's to record; refunds and disputes are
+  applied through their sinks.</li>
+<li><strong>Disputes name the charge, not the buyer</strong>: the host matches a
+  <code>ChargeDispute</code> to what it recorded for that charge, and decides whether to
+  suspend access or cancel a disputed subscription. <code>charge.dispute.updated</code> and
+  early fraud warnings are not mapped.</li>
+<li><strong>Keyless legacy prices</strong> grant nothing unless listed in
+  <code>Lifecycle.LegacyPrices</code>, each with the plan it is for; see
+  <a href="../catalog/#accounts-that-already-have-objects">the catalog</a>. There is no way
+  to have such a price named by metadata.</li>
 <li><strong>In-memory ports</strong> (<code>MemoryStore</code>, <code>MemorySink</code>) grow without bound and lose
   everything on restart. They are for tests.</li>
 <li><strong>Stripe only.</strong> The core is provider-neutral; there is no second adapter.</li>
 </ul>
+<h2 id="running-the-live-test">Running the live test<a class="headerlink" href="#running-the-live-test" title="Permanent link">&para;</a></h2>
+<p>The live test runs payforge against Stripe's <strong>test mode</strong>. It does nothing unless
+you set a test-mode secret key, and it refuses any key that is not <code>sk_test_...</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nv">PAYFORGE_LIVE_STRIPE_KEY</span><span class="o">=</span>sk_test_...<span class="w"> </span>go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./stripe<span class="w"> </span>-run<span class="w"> </span>Live<span class="w"> </span>-v
+</code></pre></div>
+<p>It uses an app name made up for the run, so it never touches objects it did not
+create, and it archives or deletes what it made when it ends (anything it could
+not remove is logged). It never runs in CI, because the variable is not set there.</p>
+<p>It checks, against the real API:</p>
+<ul>
+<li>Syncing an empty account, repeating as unchanged, and a price amount that goes
+  from A to B and back to A the same day.</li>
+<li>Creating a customer, and a second call with a changed email.</li>
+<li>A plan checkout: a hosted session carrying our metadata, and a repeat that
+  expires the first.</li>
+<li>A real subscription (made with Stripe's test card): reading it back, refusing a
+  second checkout, and sending the events Stripe made for it through the webhook
+  reader and the lifecycle, signed here with a secret of the test's own.</li>
+<li>Connect: creating an Express account, a changed email, an onboarding link, and
+  refusing a sale by a seller who has not onboarded. This part is skipped on an
+  account that has not enabled Connect.</li>
+</ul>
+<p>Lines that begin with <code>OBSERVED</code> record behavior it does not assert, such as
+whether Customer Search had caught up. Not covered: the deleted-product case,
+refunds, and a sale that completes, which need a browser or a funded seller.</p>
 
 
 

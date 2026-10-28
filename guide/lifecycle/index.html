@@ -554,6 +554,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#disputes-and-failed-payments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disputes and failed payments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#checking-your-own-implementations" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -647,6 +658,151 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/v0.1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v0.1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -700,6 +856,17 @@
     <span class="md-ellipsis">
       
         The ports
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#disputes-and-failed-payments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disputes and failed payments
       
     </span>
   </a>
@@ -807,10 +974,22 @@ matter:</p>
   one.</li>
 </ul>
 <p>This costs one Stripe API call per subscription event. <strong>Serialize per account:</strong>
-<code>Handle</code> does not lock, so two events for the same account handled at the same
-time can apply in either order, and the later <code>Apply</code> may carry the older state.
-Hold a lock per <code>Subject</code> (one handler at a time per account is enough), or give
-your sink a version check. <strong>Set <code>Provider</code> in production.</strong> Without it the event alone decides, an ended subscription never
+two events for the same account handled at the same time can apply in either
+order, and the later <code>Apply</code> may carry the older state. Set <code>Locker</code> when more
+than one handler can run at once:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kd">type</span><span class="w"> </span><span class="nx">Locker</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="nx">Lock</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">key</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">unlock</span><span class="w"> </span><span class="kd">func</span><span class="p">(),</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="p">}</span>
+</code></pre></div>
+<p><code>Handle</code> holds it under <code>payforge.LockKey(app, subject)</code> from before Stripe is
+read until the event is recorded, for subscription, refund and account events.
+Implement it across your processes, for example with a Postgres advisory lock
+on a hash of the key held in a transaction, so a crashed process cannot keep it.
+Release failures are yours to log. A lock that cannot be taken makes <code>Handle</code>
+return an error, so Stripe redelivers. <code>payforge.MemoryLocker</code> serializes within
+one process. Give the same <code>Locker</code> to the Stripe client
+(<code>stripe.Config.Locker</code>) and plan checkout takes the same key, so checkout and
+webhooks for one account also run in turn. <strong>Set <code>Provider</code> in production.</strong> Without it the event alone decides, an ended subscription never
 grants whatever status it carries, and an out-of-order event can leave a stale
 plan.</p>
 <h2 id="what-grants-a-plan">What grants a plan<a class="headerlink" href="#what-grants-a-plan" title="Permanent link">&para;</a></h2>
@@ -822,9 +1001,11 @@ plan.</p>
 <li><strong>Only a price the spec has can grant.</strong> The price's lookup key must name this
   app, a plan in the spec and an interval that plan prices. A price made by hand
   in the dashboard with the key <code>taskboard/enterprise/month</code> does not give anyone
-  the arranged Enterprise plan. A subscription from before payforge, with no
-  lookup key, is named by its metadata and counts only for a self-serve plan; a
-  price that has some other lookup key names nothing, whatever the metadata says.</li>
+  the arranged Enterprise plan. A price from before payforge, with no lookup
+  key, grants nothing unless you list it in <code>LegacyPrices</code> (see
+  <a href="../catalog/#accounts-that-already-have-objects">accounts that already have objects</a>);
+  a price that has some other lookup key names nothing. A subscription's
+  metadata never names the plan.</li>
 <li>With several lines or subscriptions, the highest tier wins; two plans in the
   same tier resolve by plan ID, so the order of the lines never matters.</li>
 <li><strong>Events from a seller's own Stripe account are never acted on</strong> for
@@ -836,15 +1017,15 @@ plan.</p>
 </ul>
 <h2 id="the-ports">The ports<a class="headerlink" href="#the-ports" title="Permanent link">&para;</a></h2>
 <p>You supply two, and optionally more for <a href="../marketplace/">marketplaces</a>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kd">type</span><span class="w"> </span><span class="nx">Store</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="nx">SubjectForCustomer</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">customerID</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="c1">// ErrNotFound if none</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nx">Seen</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">eventID</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="kt">bool</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nx">MarkSeen</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">eventID</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p">}</span>
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="kd">type</span><span class="w"> </span><span class="nx">EntitlementSink</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="nx">Apply</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">e</span><span class="w"> </span><span class="nx">payforge</span><span class="p">.</span><span class="nx">Entitlement</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span>
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kd">type</span><span class="w"> </span><span class="nx">Store</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="nx">SubjectForCustomer</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">customerID</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="c1">// ErrNotFound if none</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nx">Seen</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">eventID</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="kt">bool</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nx">MarkSeen</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">eventID</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="p">}</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="kd">type</span><span class="w"> </span><span class="nx">EntitlementSink</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nx">Apply</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">e</span><span class="w"> </span><span class="nx">payforge</span><span class="p">.</span><span class="nx">Entitlement</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="p">}</span>
 </code></pre></div>
 <p><code>Store</code> remembers which events were processed, and maps a Stripe customer to your
 account for events that do not name one. Usually the event names the account in
@@ -863,22 +1044,43 @@ its metadata and the mapping is never used.</p>
 <code>ValidUntil</code> (information; the status decides), <code>SubscriptionID</code>, <code>CustomerID</code>,
 <code>Origin</code> and <code>EventID</code>. <code>Origin</code> lets a host that also sets plans by hand tell
 where a change came from.</p>
+<h2 id="disputes-and-failed-payments">Disputes and failed payments<a class="headerlink" href="#disputes-and-failed-payments" title="Permanent link">&para;</a></h2>
+<p>A <strong>dispute</strong> (a chargeback) arrives as <code>EventDisputeOpened</code> and, once decided,
+<code>EventDisputeClosed</code>, from <code>charge.dispute.created</code> and <code>charge.dispute.closed</code>.
+Set <code>Disputes</code> to receive them; without it they are ignored.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kd">type</span><span class="w"> </span><span class="nx">DisputeSink</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="nx">ApplyDispute</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">d</span><span class="w"> </span><span class="nx">payforge</span><span class="p">.</span><span class="nx">ChargeDispute</span><span class="p">)</span><span class="w"> </span><span class="kt">error</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="p">}</span>
+</code></pre></div>
+<p>A dispute carries no metadata of the sale, so <code>ChargeDispute</code> names the
+<code>ChargeID</code> and <code>PaymentIntent</code>, not the buyer: match it to the purchase or the
+subscription invoice you recorded for that charge. While a dispute is open the
+amount is withheld; a common policy is to suspend what was bought, restore it
+when <code>Won</code>, and treat <code>Lost</code> like a full refund. Stripe keeps billing a disputed
+subscription unless you cancel it. Events can arrive out of order, so keep a
+dispute closed once you have seen it closed. Disputes from a connected account
+are skipped.</p>
+<p>A <strong>delayed payment that fails</strong> (a bank debit, for example) arrives as
+<code>EventCheckoutFailed</code>, from <code>checkout.session.async_payment_failed</code>, after the
+session already completed unpaid. The lifecycle ignores it: a subscription's own
+events follow, and a one-time purchase is yours to record, so revoke it if you
+granted it on completion.</p>
 <h2 id="checking-your-own-implementations">Checking your own implementations<a class="headerlink" href="#checking-your-own-implementations" title="Permanent link">&para;</a></h2>
 <p>Write your store and sink against your database, then run the conformance suites
 against them in your tests:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestStoreConforms</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="nx">payforgetest</span><span class="p">.</span><span class="nx">Store</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">payforge</span><span class="p">.</span><span class="nx">Store</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">customerID</span><span class="p">,</span><span class="w"> </span><span class="nx">subject</span><span class="w"> </span><span class="kt">string</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">        </span><span class="nx">s</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">newPostgresStore</span><span class="p">(</span><span class="nx">t</span><span class="p">)</span><span class="w"> </span><span class="c1">// fresh and empty</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">s</span><span class="p">,</span><span class="w"> </span><span class="nx">s</span><span class="p">.</span><span class="nx">LinkCustomer</span>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="p">})</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">}</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestSinkConforms</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nx">payforgetest</span><span class="p">.</span><span class="nx">Sink</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">payforge</span><span class="p">.</span><span class="nx">EntitlementSink</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">subject</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">payforge</span><span class="p">.</span><span class="nx">Entitlement</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">        </span><span class="nx">s</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">newPostgresSink</span><span class="p">(</span><span class="nx">t</span><span class="p">)</span>
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">s</span><span class="p">,</span><span class="w"> </span><span class="nx">s</span><span class="p">.</span><span class="nx">Get</span>
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="p">})</span>
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestStoreConforms</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="nx">payforgetest</span><span class="p">.</span><span class="nx">Store</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">payforge</span><span class="p">.</span><span class="nx">Store</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">customerID</span><span class="p">,</span><span class="w"> </span><span class="nx">subject</span><span class="w"> </span><span class="kt">string</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">        </span><span class="nx">s</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">newPostgresStore</span><span class="p">(</span><span class="nx">t</span><span class="p">)</span><span class="w"> </span><span class="c1">// fresh and empty</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">s</span><span class="p">,</span><span class="w"> </span><span class="nx">s</span><span class="p">.</span><span class="nx">LinkCustomer</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="p">})</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="p">}</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="kd">func</span><span class="w"> </span><span class="nx">TestSinkConforms</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">    </span><span class="nx">payforgetest</span><span class="p">.</span><span class="nx">Sink</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">payforge</span><span class="p">.</span><span class="nx">EntitlementSink</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">subject</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">payforge</span><span class="p">.</span><span class="nx">Entitlement</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">        </span><span class="nx">s</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">newPostgresSink</span><span class="p">(</span><span class="nx">t</span><span class="p">)</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">s</span><span class="p">,</span><span class="w"> </span><span class="nx">s</span><span class="p">.</span><span class="nx">Get</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">    </span><span class="p">})</span>
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="p">}</span>
 </code></pre></div>
 <p>They check replay safety, concurrent use, unknown customers, whole-state
 replacement and independent accounts. <code>MemoryStore</code> and <code>MemorySink</code> pass them

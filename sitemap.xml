@@ -2,34 +2,46 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://plexusone.github.io/payforge/</loc>
-         <lastmod>2026-10-23</lastmod>
+         <lastmod>2026-10-28</lastmod>
     </url>
     <url>
          <loc>https://plexusone.github.io/payforge/guide/</loc>
-         <lastmod>2026-10-23</lastmod>
+         <lastmod>2026-10-28</lastmod>
     </url>
     <url>
          <loc>https://plexusone.github.io/payforge/guide/catalog/</loc>
-         <lastmod>2026-10-23</lastmod>
+         <lastmod>2026-10-28</lastmod>
     </url>
     <url>
          <loc>https://plexusone.github.io/payforge/guide/checkout/</loc>
-         <lastmod>2026-10-23</lastmod>
+         <lastmod>2026-10-28</lastmod>
     </url>
     <url>
          <loc>https://plexusone.github.io/payforge/guide/lifecycle/</loc>
-         <lastmod>2026-10-23</lastmod>
+         <lastmod>2026-10-28</lastmod>
     </url>
     <url>
          <loc>https://plexusone.github.io/payforge/guide/limitations/</loc>
-         <lastmod>2026-10-23</lastmod>
+         <lastmod>2026-10-28</lastmod>
     </url>
     <url>
          <loc>https://plexusone.github.io/payforge/guide/marketplace/</loc>
-         <lastmod>2026-10-23</lastmod>
+         <lastmod>2026-10-28</lastmod>
     </url>
     <url>
          <loc>https://plexusone.github.io/payforge/guide/webhooks/</loc>
-         <lastmod>2026-10-23</lastmod>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+    <url>
+         <loc>https://plexusone.github.io/payforge/releases/</loc>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+    <url>
+         <loc>https://plexusone.github.io/payforge/releases/changelog/</loc>
+         <lastmod>2026-10-28</lastmod>
+    </url>
+    <url>
+         <loc>https://plexusone.github.io/payforge/releases/v0.1.0/</loc>
+         <lastmod>2026-10-28</lastmod>
     </url>
 </urlset>

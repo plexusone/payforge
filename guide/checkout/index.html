@@ -658,6 +658,151 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/v0.1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v0.1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -773,10 +918,13 @@
 <h1 id="checkout-and-the-customer-portal">Checkout and the customer portal<a class="headerlink" href="#checkout-and-the-customer-portal" title="Permanent link">&para;</a></h1>
 <p>All three operations return a URL on a page hosted by Stripe. Send the buyer
 there; nothing about a card ever touches your server.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">stripe</span><span class="p">.</span><span class="nx">New</span><span class="p">(</span><span class="nx">spec</span><span class="p">,</span><span class="w"> </span><span class="nx">stripe</span><span class="p">.</span><span class="nx">Config</span><span class="p">{</span><span class="nx">SecretKey</span><span class="p">:</span><span class="w"> </span><span class="nx">key</span><span class="p">})</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nx">client</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">stripe</span><span class="p">.</span><span class="nx">New</span><span class="p">(</span><span class="nx">spec</span><span class="p">,</span><span class="w"> </span><span class="nx">stripe</span><span class="p">.</span><span class="nx">Config</span><span class="p">{</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="nx">SecretKey</span><span class="p">:</span><span class="w">       </span><span class="nx">key</span><span class="p">,</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nx">AllowedURLHosts</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">&quot;app.example.com&quot;</span><span class="p">},</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">})</span>
 </code></pre></div>
-<p><code>stripe.Config</code> takes the secret key, an optional <code>HTTPClient</code>, <code>AllowedURLHosts</code>
-and <code>MaxNetworkRetries</code> (default 2, and zero means the default, so retries cannot
+<p><code>stripe.Config</code> takes the secret key, <code>AllowedURLHosts</code>, an optional <code>HTTPClient</code>,
+an optional <code>Locker</code> and <code>MaxNetworkRetries</code> (default 2, and zero means the default, so retries cannot
 be turned off; they reuse the idempotency key). The key is never included in an
 error. A <code>*stripe.Client</code> implements <code>payforge.Billing</code>.</p>
 <p><strong>Give every call a context with a deadline.</strong> Without one a call can wait for
@@ -784,11 +932,15 @@ the library's own timeout and its retries, which is minutes, and <code>Sync</cod
 calls in a row.</p>
 <h2 id="urls">URLs<a class="headerlink" href="#urls" title="Permanent link">&para;</a></h2>
 <p>Success, cancel, return and refresh URLs must be <code>https</code> (or <code>http</code> for
-<code>localhost</code>), and may not carry a user name or password. Set <code>AllowedURLHosts</code> to
-your own hostnames, and a URL that names any other host is refused with
-<code>ErrInvalidURL</code>. Do that whenever a URL is built from anything a user sent:
-without it, a buyer can be sent through a genuine Stripe checkout and land on a
-page of an attacker's choosing, holding the session ID.</p>
+<code>localhost</code>), and may not carry a user name or password. <strong>Set
+<code>AllowedURLHosts</code> to your own hostnames</strong>: a URL that names any other host is
+refused with <code>ErrInvalidURL</code>. <code>localhost</code>, <code>127.0.0.1</code> and <code>::1</code> are always
+accepted, even when the list does not name them, so with the list empty every
+URL except one on those hosts is refused. Otherwise a URL built from anything a user sent could
+send a buyer through a genuine Stripe checkout to a page of an attacker's
+choosing, holding the session ID. Entries are bare hostnames, compared without
+case; a scheme, port or wildcard is refused when the client is made. A client
+that only <a href="../catalog/#syncing">syncs the catalog</a> may leave the list empty.</p>
 <h2 id="a-subject">A subject<a class="headerlink" href="#a-subject" title="Permanent link">&para;</a></h2>
 <p>Everything is for a <strong>subject</strong>: the account in your system that pays, usually an
 organization.</p>
@@ -816,16 +968,19 @@ ID, but need not.</p>
 <li>A plan with <code>trialDays</code> starts the trial <strong>without asking for a card</strong>, and the
   subscription is canceled at the end if the buyer added none.</li>
 <li>A subject that already holds a subscription that grants its plan is refused
-  with <code>ErrAlreadySubscribed</code>. Send that subject to the portal instead. The check
-  runs before the session exists, so it stops a second checkout after the first
-  was paid, <strong>not two open at once</strong>: two tabs with different URLs can both
-  complete. A host that must never bill twice holds a lock per subject around
-  checkout.</li>
-<li>The same request returns the same session (the idempotency key is derived from
-  the app, subject, plan, interval, price and URLs). Stripe replays a key for a
-  day, so a session that was completed or has expired comes back without a URL;
-  payforge then creates a new one, and a buyer who subscribes, cancels and returns
-  the same day gets a working page.</li>
+  with <code>ErrAlreadySubscribed</code>. Send that subject to the portal instead.</li>
+<li><strong>Only the newest plan checkout can be paid.</strong> Before creating a session,
+  payforge expires the subject's other open plan checkouts for the app, so two
+  tabs cannot both subscribe. If one cannot be expired, because the buyer is
+  completing it right now, the call fails and nothing is created; a retry then
+  sees the subscription. Two calls at the very same moment can still miss each
+  other unless <code>stripe.Config.Locker</code> is set, which runs them in turn per
+  subject (see <a href="../lifecycle/#subscriptions-are-decided-from-stripe-not-from-the-event">the lifecycle</a>).</li>
+<li>A network retry returns the same session (the idempotency key is derived from
+  the app, subject, plan, interval, price, URLs and any session just expired).
+  Stripe replays a key for a day, so a session that was completed or has expired
+  comes back without a URL; payforge then creates a new one, and a buyer who
+  subscribes, cancels and returns the same day gets a working page.</li>
 </ul>
 <p>Paying does <strong>not</strong> change the account's plan by itself. The plan changes when
 the subscription's webhook arrives; see <a href="../lifecycle/">the lifecycle</a>.</p>

@@ -647,6 +647,151 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/v0.1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v0.1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -850,9 +995,13 @@ possible as written. Treat cross-border sellers as unsupported.</p>
 <li>A one-time sale being paid. Record it yourself when your checkout completes
   (<code>EventCheckoutCompleted</code> with <code>Paid</code>), and match a later refund by payment
   intent.</li>
-<li>Delayed payment methods that settle days later.</li>
-<li>Payouts, disputes and transfer reversals; Stripe handles them and sends events
-  payforge ignores.</li>
+<li>Delayed payment methods that settle days later: the success arrives as
+  <code>EventCheckoutCompleted</code> with <code>Paid</code> and the failure as <code>EventCheckoutFailed</code>;
+  both are yours to record.</li>
+<li>Disputes reach a <code>DisputeSink</code> by charge, not by buyer; see
+  <a href="../lifecycle/#disputes-and-failed-payments">disputes</a>.</li>
+<li>Payouts and transfer reversals; Stripe handles them and sends events payforge
+  ignores.</li>
 </ul>
 
 

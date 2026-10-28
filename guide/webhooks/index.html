@@ -647,6 +647,151 @@
   
 
     
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Releases
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Releases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/v0.1.0/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    v0.1.0
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
   </ul>
 </nav>
                   </div>
@@ -751,8 +896,14 @@
 <h1 id="webhooks">Webhooks<a class="headerlink" href="#webhooks" title="Permanent link">&para;</a></h1>
 <p>Stripe tells you what happened by posting events to an endpoint you register in
 the dashboard. payforge verifies each one and reduces it to a small <code>Event</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nx">hook</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">stripe</span><span class="p">.</span><span class="nx">Webhook</span><span class="p">{</span><span class="nx">Secrets</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="nx">platformSecret</span><span class="p">,</span><span class="w"> </span><span class="nx">connectSecret</span><span class="p">}}</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nx">ev</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">hook</span><span class="p">.</span><span class="nx">Read</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span><span class="w"> </span><span class="c1">// r is the *http.Request</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nx">hook</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">stripe</span><span class="p">.</span><span class="nx">Webhook</span><span class="p">{</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="nx">Mode</span><span class="p">:</span><span class="w">    </span><span class="nx">client</span><span class="p">.</span><span class="nx">Mode</span><span class="p">(),</span><span class="w"> </span><span class="c1">// or stripe.KeyMode(key); required</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nx">Secrets</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="nx">platformSecret</span><span class="p">,</span><span class="w"> </span><span class="nx">connectSecret</span><span class="p">},</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">}</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nx">ev</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">hook</span><span class="p">.</span><span class="nx">Read</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span><span class="w"> </span><span class="c1">// r is the *http.Request</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="c1">// Answer 4xx or 5xx; never pass ev on: it is empty.</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">}</span>
 </code></pre></div>
 <p>A complete handler is <a href="https://github.com/plexusone/payforge/tree/main/examples/webhook"><code>examples/webhook</code></a>.</p>
 <h2 id="what-is-checked">What is checked<a class="headerlink" href="#what-is-checked" title="Permanent link">&para;</a></h2>
@@ -767,8 +918,12 @@ the dashboard. payforge verifies each one and reduces it to a small <code>Event<
 <li>The body is read before the signature is checked, up to the limit, so run the
   endpoint on a server with read timeouts (<code>http.Server.ReadTimeout</code>, or a
   <code>ReadHeaderTimeout</code> and a reverse proxy that limits slow bodies).</li>
-<li><code>Livemode</code> is not enforced. Do not put a test-mode and a live-mode secret in
-  the same list, or test events will be accepted in production.</li>
+<li><strong>The mode must match.</strong> <code>Mode</code> is the mode of your API key (<code>sk_test_</code> and
+  <code>rk_test_</code> keys are test mode, any other is live). An event whose <code>livemode</code>
+  differs comes back as <code>EventIgnored</code>, so a test-mode secret configured in
+  production by mistake cannot change a live account; acknowledge it like any
+  other ignored event. With <code>Mode</code> unset, <code>Read</code> returns an error for every
+  event, so the mistake shows as 5xx responses instead of lost events.</li>
 </ul>
 <h2 id="the-two-failures">The two failures<a class="headerlink" href="#the-two-failures" title="Permanent link">&para;</a></h2>
 <p>Tell them apart, because they need different answers:</p>
@@ -793,7 +948,7 @@ the dashboard. payforge verifies each one and reduces it to a small <code>Event<
 </tr>
 <tr>
 <td>Any other error</td>
-<td>Stripe signed it but it cannot be read, or no secret is configured</td>
+<td>Stripe signed it but it cannot be read, or no secret or <code>Mode</code> is configured</td>
 <td>500: it is yours to fix, and Stripe will redeliver</td>
 </tr>
 </tbody>
@@ -821,6 +976,11 @@ attack.</p>
 <td><code>Checkout</code>: mode, whether <code>Paid</code>, payment intent, amount</td>
 </tr>
 <tr>
+<td><code>EventCheckoutFailed</code></td>
+<td><code>checkout.session.async_payment_failed</code></td>
+<td><code>Checkout</code>, with <code>Paid</code> false</td>
+</tr>
+<tr>
 <td><code>EventInvoicePaid</code> / <code>Failed</code></td>
 <td><code>invoice.paid</code>, <code>invoice.payment_failed</code></td>
 <td><code>Invoice</code></td>
@@ -836,8 +996,13 @@ attack.</p>
 <td><code>Refund</code></td>
 </tr>
 <tr>
+<td><code>EventDisputeOpened</code> / <code>Closed</code></td>
+<td><code>charge.dispute.created</code>, <code>charge.dispute.closed</code></td>
+<td><code>Dispute</code>: charge, payment intent, amount, reason, status</td>
+</tr>
+<tr>
 <td><code>EventIgnored</code></td>
-<td>everything else</td>
+<td>everything else, and any event of the other mode</td>
 <td>only <code>ID</code> and <code>Type</code></td>
 </tr>
 </tbody>
@@ -854,8 +1019,9 @@ when the event gives none it is zero, never invented.</p>
 else for days.</p>
 <h2 id="registering-endpoints">Registering endpoints<a class="headerlink" href="#registering-endpoints" title="Permanent link">&para;</a></h2>
 <ul>
-<li>One endpoint for your own account's events: subscriptions, checkout, invoices,
-  refunds, and <code>account.updated</code> for your sellers' accounts.</li>
+<li>One endpoint for your own account's events: subscriptions, checkout
+  (including <code>checkout.session.async_payment_failed</code>), invoices, refunds,
+  disputes, and <code>account.updated</code> for your sellers' accounts.</li>
 <li>With a marketplace, a second endpoint for <strong>events on connected accounts</strong>,
   with its own secret. Both secrets go in <code>Secrets</code>, and
   <a href="../#free-mode"><code>CheckStartup</code></a> requires both.</li>
