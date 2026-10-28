@@ -43,6 +43,7 @@ type Client struct {
 	spec  *pricingspec.Spec
 	sc    *stripesdk.Client
 	hosts map[string]bool
+	mode  Mode
 }
 
 var _ payforge.Billing = (*Client)(nil)
@@ -81,8 +82,12 @@ func New(spec *pricingspec.Spec, cfg Config) (*Client, error) {
 		}
 		hosts[h] = true
 	}
-	return &Client{spec: spec, hosts: hosts, sc: stripesdk.NewClient(cfg.SecretKey, stripesdk.WithBackends(stripesdk.NewBackendsWithConfig(bc)))}, nil
+	return &Client{spec: spec, hosts: hosts, mode: KeyMode(cfg.SecretKey), sc: stripesdk.NewClient(cfg.SecretKey, stripesdk.WithBackends(stripesdk.NewBackendsWithConfig(bc)))}, nil
 }
+
+// Mode is the mode of the client's key. Give it to the Webhook, so events of the
+// other mode are not acted on.
+func (c *Client) Mode() Mode { return c.mode }
 
 // Enabled reports true: a Client has a key.
 func (*Client) Enabled() bool { return true }

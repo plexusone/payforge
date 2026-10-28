@@ -99,7 +99,10 @@ asking for a card.
 Webhooks are verified and reduced to a small event:
 
 ```go
-hook := payforgestripe.Webhook{Secrets: []string{platformSecret, connectSecret}}
+hook := payforgestripe.Webhook{
+	Mode:    billing.Mode(), // events of the other mode are ignored
+	Secrets: []string{platformSecret, connectSecret},
+}
 
 func handle(w http.ResponseWriter, r *http.Request) {
 	ev, err := hook.Read(r) // verifies the signature; the body is limited to 1 MiB

@@ -50,7 +50,7 @@ func newRig(t *testing.T, secrets ...string) *rig {
 	}
 	r := &rig{sink: payforge.NewMemorySink(), logs: &bytes.Buffer{}}
 	l := &payforge.Lifecycle{Spec: spec, Store: payforge.NewMemoryStore(), Sink: r.sink}
-	r.srv = webhook.Handler(stripe.Webhook{Secrets: secrets}, l, slog.New(slog.NewTextHandler(r.logs, nil)))
+	r.srv = webhook.Handler(stripe.Webhook{Mode: stripe.ModeTest, Secrets: secrets}, l, slog.New(slog.NewTextHandler(r.logs, nil)))
 	return r
 }
 

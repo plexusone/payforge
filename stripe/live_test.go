@@ -141,7 +141,7 @@ func (l *live) waitEvent(typ, owner string) json.RawMessage {
 func signed(payload []byte) (string, stripe.Webhook) {
 	at := time.Now()
 	return fmt.Sprintf("t=%d,v1=%s", at.Unix(), hex.EncodeToString(webhook.ComputeSignature(at, payload, liveSecret))),
-		stripe.Webhook{Secrets: []string{liveSecret}}
+		stripe.Webhook{Mode: stripe.ModeTest, Secrets: []string{liveSecret}}
 }
 
 func TestLiveSubscriptions(t *testing.T) {

@@ -176,12 +176,13 @@ ev, err := stripe.ParseEvent(payload, signatureHeader, secret)
   return an `Event` with no body so the host can acknowledge and ignore them.
 - Only a few stable fields are read, so an endpoint pinned to another API
   version still works.
-- `stripe.Webhook{Secrets, LegacyPrefixes}` verifies against any one of several
+- `stripe.Webhook{Mode, Secrets, LegacyPrefixes}` verifies against any one of several
   secrets (the platform's endpoint and the connected-account endpoint), checks the
   signature before reading the payload, and refuses a stale signature. A
   signature failure is `ErrSignatureInvalid`; a payload that verifies but cannot
   be read is a different error, so a host can answer 400 to one and 500 to the
-  other. `Read` limits the body to 1 MiB.
+  other. `Read` limits the body to 1 MiB. An event whose `livemode` differs from
+  the key's `Mode` is returned as `EventIgnored`.
 - The event keeps every line item of a subscription, not only the first, and
   never invents a period end: when the event does not give one it is zero. The
   period and the invoice's subscription are read from both places the API has put

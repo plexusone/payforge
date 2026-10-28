@@ -22,6 +22,11 @@ const (
 // Webhook verifies and reads Stripe webhook requests. It holds secrets: do not
 // log it.
 type Webhook struct {
+	// Mode is the mode of the API key the host uses, usually Client.Mode() or
+	// KeyMode(key). It is required. An event whose livemode does not match is
+	// returned as payforge.EventIgnored, to be acknowledged and not acted on, so
+	// a test-mode secret configured by mistake cannot change live accounts.
+	Mode Mode
 	// Secrets are the signing secrets of the endpoints that deliver here. A
 	// payload is accepted if any one verifies it, so the platform's endpoint and
 	// the connected-account endpoint can share a handler.
@@ -57,11 +62,19 @@ func (w Webhook) Read(r *http.Request) (payforge.Event, error) {
 // Parse verifies a payload against its Stripe-Signature header and reduces it
 // to an Event.
 //
+// An event of the other mode than Mode comes back as EventIgnored with only its
+// ID, type, creation time, livemode and account, never acted on.
+//
 // The signature is checked before anything else is read. Only a few stable
 // fields are taken from the payload, so an endpoint pinned to a different API
 // version than this library's still works. An event type the lifecycle does not
 // use comes back as EventIgnored with only its ID and type.
 func (w Webhook) Parse(payload []byte, header string) (payforge.Event, error) {
+	if !w.Mode.valid() {
+		// A configuration error, like a missing secret: answered with a 5xx, so
+		// nothing is lost while it is fixed.
+		return payforge.Event{}, errors.New("stripe: webhook Mode is not set: use the client's Mode()")
+	}
 	ev, err := w.verify(payload, header)
 	if err != nil {
 		return payforge.Event{}, err
@@ -69,6 +82,9 @@ func (w Webhook) Parse(payload []byte, header string) (payforge.Event, error) {
 	out := payforge.Event{
 		ID: ev.ID, Type: string(ev.Type), Kind: payforge.EventIgnored,
 		Created: time.Unix(ev.Created, 0).UTC(), Livemode: ev.Livemode, Account: ev.Account,
+	}
+	if ev.Livemode != w.Mode.livemode() {
+		return out, nil // the other mode's event: not ours to act on
 	}
 	kind, ok := kinds[string(ev.Type)]
 	if !ok {

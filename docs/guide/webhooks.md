@@ -4,7 +4,10 @@ Stripe tells you what happened by posting events to an endpoint you register in
 the dashboard. payforge verifies each one and reduces it to a small `Event`.
 
 ```go
-hook := stripe.Webhook{Secrets: []string{platformSecret, connectSecret}}
+hook := stripe.Webhook{
+    Mode:    client.Mode(), // or stripe.KeyMode(key); required
+    Secrets: []string{platformSecret, connectSecret},
+}
 ev, err := hook.Read(r) // r is the *http.Request
 ```
 
@@ -22,8 +25,12 @@ A complete handler is [`examples/webhook`](https://github.com/plexusone/payforge
 - The body is read before the signature is checked, up to the limit, so run the
   endpoint on a server with read timeouts (`http.Server.ReadTimeout`, or a
   `ReadHeaderTimeout` and a reverse proxy that limits slow bodies).
-- `Livemode` is not enforced. Do not put a test-mode and a live-mode secret in
-  the same list, or test events will be accepted in production.
+- **The mode must match.** `Mode` is the mode of your API key (`sk_test_` and
+  `rk_test_` keys are test mode, any other is live). An event whose `livemode`
+  differs comes back as `EventIgnored`, so a test-mode secret configured in
+  production by mistake cannot change a live account; acknowledge it like any
+  other ignored event. With `Mode` unset, `Read` returns an error for every
+  event, so the mistake shows as 5xx responses instead of lost events.
 
 ## The two failures
 
@@ -33,7 +40,7 @@ Tell them apart, because they need different answers:
 |-------|---------|--------|
 | `payforge.ErrSignatureInvalid` | Not from Stripe, or stale | 400. A retry cannot fix it |
 | `payforge.ErrPayloadTooLarge` | Body over the limit | 413 |
-| Any other error | Stripe signed it but it cannot be read, or no secret is configured | 500: it is yours to fix, and Stripe will redeliver |
+| Any other error | Stripe signed it but it cannot be read, or no secret or `Mode` is configured | 500: it is yours to fix, and Stripe will redeliver |
 
 Treating an unreadable event as a bad signature would hide your own bug as an
 attack.
@@ -47,7 +54,7 @@ attack.
 | `EventInvoicePaid` / `Failed` | `invoice.paid`, `invoice.payment_failed` | `Invoice` |
 | `EventAccountUpdated` | `account.updated` | `AccountState` |
 | `EventRefunded` | `charge.refunded` | `Refund` |
-| `EventIgnored` | everything else | only `ID` and `Type` |
+| `EventIgnored` | everything else, and any event of the other mode | only `ID` and `Type` |
 
 Every event also has `ID`, `Type`, `Created`, `Livemode`, and the `App`, `Subject`,
 `Plan` and `Product` read from the object's metadata. For a subscription with
