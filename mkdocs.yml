@@ -57,6 +57,10 @@ nav:
       - The lifecycle: guide/lifecycle.md
       - Marketplaces: guide/marketplace.md
       - Known limitations: guide/limitations.md
+  - Releases:
+      - releases/index.md
+      - v0.1.0: releases/v0.1.0.md
+      - Changelog: releases/changelog.md
 
 extra:
   social:

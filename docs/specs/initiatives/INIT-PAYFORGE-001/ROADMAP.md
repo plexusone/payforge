@@ -77,3 +77,9 @@ configuration, other payment providers, and a command-line tool over the core.
   - Depends on: `RMI-PAYFORGE-013`
 - [ ] `RMI-PAYFORGE-022` Review of the core and adapter; fix findings; record known limitations; v0.1.0 release with changelog, notes and tag after CI
   - Depends on: `RMI-PAYFORGE-018`, `RMI-PAYFORGE-019`, `RMI-PAYFORGE-020`, `RMI-PAYFORGE-021`
+
+v0.1.0 ships ahead of `RMI-PAYFORGE-018` (adoption by the source product) and
+`RMI-PAYFORGE-021` (running the live test against Stripe's test mode): the
+review of the core and adapter is done and its findings are fixed, and the
+release notes list the live test as not yet run. Both items, and with them
+`RMI-PAYFORGE-022`, are completed in a later release.

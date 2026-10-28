@@ -133,6 +133,10 @@ spec does not have never grants.
 Everything written to the provider carries `payforge_app`, so several products
 can share one account and still be told apart.
 
+## Releases
+
+[v0.1.0](docs/releases/v0.1.0.md) · [Changelog](CHANGELOG.md)
+
 ## Development
 
 ```bash
