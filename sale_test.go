@@ -304,3 +304,69 @@ func TestARefundFromAConnectedAccountIsNeverApplied(t *testing.T) {
 		t.Fatal("a seller's forged refund reached the sink")
 	}
 }
+
+func disputeEvent(id string, kind payforge.EventKind, status string) payforge.Event {
+	return payforge.Event{
+		ID: id, Type: "charge.dispute.x", Kind: kind,
+		Dispute: &payforge.DisputeResult{ID: "dp_1", ChargeID: "ch_1", PaymentIntent: "pi_1",
+			AmountCents: 2000, Currency: "usd", Reason: "fraudulent", Status: status},
+	}
+}
+
+func TestDisputesReachTheDisputeSink(t *testing.T) {
+	r := newSaleRig(t)
+	r.l.Disputes = r.sink
+	res := r.handle(t, disputeEvent("evt_d1", payforge.EventDisputeOpened, "needs_response"))
+	if res.Outcome != payforge.OutcomeApplied || res.Dispute == nil || res.Dispute.Closed || res.Dispute.ChargeID != "ch_1" {
+		t.Fatalf("opened: %+v", res)
+	}
+	res = r.handle(t, disputeEvent("evt_d2", payforge.EventDisputeClosed, "lost"))
+	if d := res.Dispute; d == nil || !d.Closed || !d.Lost || d.Won {
+		t.Fatalf("closed: %+v", res)
+	}
+	// A late "opened" cannot reopen it, and a repeat is a duplicate.
+	r.handle(t, disputeEvent("evt_d0", payforge.EventDisputeOpened, "needs_response"))
+	if d, _ := r.sink.Dispute("dp_1"); !d.Closed || !d.Lost {
+		t.Fatalf("reopened: %+v", d)
+	}
+	if res := r.handle(t, disputeEvent("evt_d2", payforge.EventDisputeClosed, "lost")); res.Outcome != payforge.OutcomeDuplicate {
+		t.Fatalf("repeat: %+v", res)
+	}
+	won := r.handle(t, disputeEvent("evt_d3", payforge.EventDisputeClosed, "won"))
+	if d := won.Dispute; d == nil || !d.Won || d.Lost {
+		t.Fatalf("won: %+v", won)
+	}
+
+	// From a connected account, or for another app, it is skipped.
+	ev := disputeEvent("evt_d4", payforge.EventDisputeOpened, "needs_response")
+	ev.Account = "acct_seller123"
+	if res := r.handle(t, ev); res.Outcome != payforge.OutcomeSkipped {
+		t.Fatalf("connected account: %+v", res)
+	}
+	ev = disputeEvent("evt_d5", payforge.EventDisputeOpened, "needs_response")
+	ev.App = "otherapp"
+	if res := r.handle(t, ev); res.Outcome != payforge.OutcomeSkipped {
+		t.Fatalf("other app: %+v", res)
+	}
+	// Without a sink it is ignored.
+	r2 := newSaleRig(t)
+	if res := r2.handle(t, disputeEvent("evt_d1", payforge.EventDisputeOpened, "needs_response")); res.Outcome != payforge.OutcomeIgnored {
+		t.Fatalf("no sink: %+v", res)
+	}
+	// A failed checkout is the host's to record.
+	if res := r2.handle(t, payforge.Event{ID: "evt_f", Kind: payforge.EventCheckoutFailed}); res.Outcome != payforge.OutcomeIgnored {
+		t.Fatalf("checkout failed: %+v", res)
+	}
+}
+
+func TestSaleEventsHoldTheLockerPerAccount(t *testing.T) {
+	r := newSaleRig(t)
+	lk := &recordingLocker{}
+	r.l.Locker = lk
+	r.handle(t, refundEvent("evt_r", 500, false))
+	r.handle(t, accountEvent("evt_a", "craftmarket", "seller-1"))
+	want := []string{payforge.LockKey("craftmarket", "buyer-1"), payforge.LockKey("craftmarket", "seller-1")}
+	if len(lk.keys) != 2 || lk.keys[0] != want[0] || lk.keys[1] != want[1] || lk.released != 2 {
+		t.Fatalf("keys %v, released %d", lk.keys, lk.released)
+	}
+}

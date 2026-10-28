@@ -4,11 +4,14 @@ All three operations return a URL on a page hosted by Stripe. Send the buyer
 there; nothing about a card ever touches your server.
 
 ```go
-client, err := stripe.New(spec, stripe.Config{SecretKey: key})
+client, err := stripe.New(spec, stripe.Config{
+    SecretKey:       key,
+    AllowedURLHosts: []string{"app.example.com"},
+})
 ```
 
-`stripe.Config` takes the secret key, an optional `HTTPClient`, `AllowedURLHosts`
-and `MaxNetworkRetries` (default 2, and zero means the default, so retries cannot
+`stripe.Config` takes the secret key, `AllowedURLHosts`, an optional `HTTPClient`,
+an optional `Locker` and `MaxNetworkRetries` (default 2, and zero means the default, so retries cannot
 be turned off; they reuse the idempotency key). The key is never included in an
 error. A `*stripe.Client` implements `payforge.Billing`.
 
@@ -19,11 +22,15 @@ calls in a row.
 ## URLs
 
 Success, cancel, return and refresh URLs must be `https` (or `http` for
-`localhost`), and may not carry a user name or password. Set `AllowedURLHosts` to
-your own hostnames, and a URL that names any other host is refused with
-`ErrInvalidURL`. Do that whenever a URL is built from anything a user sent:
-without it, a buyer can be sent through a genuine Stripe checkout and land on a
-page of an attacker's choosing, holding the session ID.
+`localhost`), and may not carry a user name or password. **Set
+`AllowedURLHosts` to your own hostnames**: a URL that names any other host is
+refused with `ErrInvalidURL`. `localhost`, `127.0.0.1` and `::1` are always
+accepted, even when the list does not name them, so with the list empty every
+URL except one on those hosts is refused. Otherwise a URL built from anything a user sent could
+send a buyer through a genuine Stripe checkout to a page of an attacker's
+choosing, holding the session ID. Entries are bare hostnames, compared without
+case; a scheme, port or wildcard is refused when the client is made. A client
+that only [syncs the catalog](catalog.md#syncing) may leave the list empty.
 
 ## A subject
 
@@ -59,16 +66,19 @@ sess, err := client.CheckoutPlan(ctx, payforge.PlanCheckout{
 - A plan with `trialDays` starts the trial **without asking for a card**, and the
   subscription is canceled at the end if the buyer added none.
 - A subject that already holds a subscription that grants its plan is refused
-  with `ErrAlreadySubscribed`. Send that subject to the portal instead. The check
-  runs before the session exists, so it stops a second checkout after the first
-  was paid, **not two open at once**: two tabs with different URLs can both
-  complete. A host that must never bill twice holds a lock per subject around
-  checkout.
-- The same request returns the same session (the idempotency key is derived from
-  the app, subject, plan, interval, price and URLs). Stripe replays a key for a
-  day, so a session that was completed or has expired comes back without a URL;
-  payforge then creates a new one, and a buyer who subscribes, cancels and returns
-  the same day gets a working page.
+  with `ErrAlreadySubscribed`. Send that subject to the portal instead.
+- **Only the newest plan checkout can be paid.** Before creating a session,
+  payforge expires the subject's other open plan checkouts for the app, so two
+  tabs cannot both subscribe. If one cannot be expired, because the buyer is
+  completing it right now, the call fails and nothing is created; a retry then
+  sees the subscription. Two calls at the very same moment can still miss each
+  other unless `stripe.Config.Locker` is set, which runs them in turn per
+  subject (see [the lifecycle](lifecycle.md#subscriptions-are-decided-from-stripe-not-from-the-event)).
+- A network retry returns the same session (the idempotency key is derived from
+  the app, subject, plan, interval, price, URLs and any session just expired).
+  Stripe replays a key for a day, so a session that was completed or has expired
+  comes back without a URL; payforge then creates a new one, and a buyer who
+  subscribes, cancels and returns the same day gets a working page.
 
 Paying does **not** change the account's plan by itself. The plan changes when
 the subscription's webhook arrives; see [the lifecycle](lifecycle.md).

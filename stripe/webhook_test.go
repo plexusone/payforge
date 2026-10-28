@@ -38,7 +38,9 @@ func event(id, typ, account, object string) []byte {
 		id, acct, typ, object))
 }
 
-func wh() stripe.Webhook { return stripe.Webhook{Secrets: []string{whSecret, whConnect}} }
+func wh() stripe.Webhook {
+	return stripe.Webhook{Mode: stripe.ModeTest, Secrets: []string{whSecret, whConnect}}
+}
 
 func parse(t *testing.T, w stripe.Webhook, payload []byte) payforge.Event {
 	t.Helper()
@@ -89,7 +91,7 @@ func TestWebhookSignature(t *testing.T) {
 		}
 	})
 	t.Run("no secret is a configuration error, not a bad signature", func(t *testing.T) {
-		for _, w := range []stripe.Webhook{{}, {Secrets: []string{""}}} {
+		for _, w := range []stripe.Webhook{{Mode: stripe.ModeTest}, {Mode: stripe.ModeTest, Secrets: []string{""}}} {
 			_, err := w.Parse(payload, sign(payload, whSecret, now))
 			if err == nil || errors.Is(err, payforge.ErrSignatureInvalid) {
 				t.Errorf("err = %v", err)
@@ -289,6 +291,29 @@ func TestWebhookConnectAccountAndRefund(t *testing.T) {
 	}
 }
 
+func TestWebhookAsyncPaymentFailedAndDisputes(t *testing.T) {
+	ev := parse(t, wh(), event("evt_f", "checkout.session.async_payment_failed", "", `{"id":"cs_4","mode":"payment","payment_status":"unpaid",
+	  "payment_intent":"pi_4","metadata":{"payforge_app":"craftmarket","payforge_product":"sample_pack","payforge_subject":"org-1"}}`))
+	if ev.Kind != payforge.EventCheckoutFailed || ev.Checkout == nil || ev.Checkout.Paid || ev.Checkout.SessionID != "cs_4" || ev.Subject != "org-1" {
+		t.Fatalf("async failure: %+v", ev)
+	}
+	for typ, kind := range map[string]payforge.EventKind{
+		"charge.dispute.created": payforge.EventDisputeOpened,
+		"charge.dispute.closed":  payforge.EventDisputeClosed,
+	} {
+		ev := parse(t, wh(), event("evt_d", typ, "", `{"id":"dp_1","object":"dispute","amount":2000,"currency":"usd",
+		  "charge":"ch_1","payment_intent":{"id":"pi_1"},"reason":"fraudulent","status":"lost","metadata":{}}`))
+		d := ev.Dispute
+		if ev.Kind != kind || d == nil {
+			t.Fatalf("%s: %+v", typ, ev)
+		}
+		if d.ID != "dp_1" || d.ChargeID != "ch_1" || d.PaymentIntent != "pi_1" || d.AmountCents != 2000 ||
+			d.Currency != "usd" || d.Reason != "fraudulent" || d.Status != "lost" {
+			t.Errorf("%s: dispute = %+v", typ, d)
+		}
+	}
+}
+
 func TestWebhookIgnoresWhatItDoesNotUse(t *testing.T) {
 	ev := parse(t, wh(), event("evt_x", "customer.created", "", `{"id":"cus_1","metadata":{"payforge_app":"taskboard"}}`))
 	if ev.Kind != payforge.EventIgnored || ev.ID != "evt_x" || ev.Type != "customer.created" {
@@ -344,5 +369,56 @@ func TestWebhookToEntitlement(t *testing.T) {
 	}
 	if res, _ := l.Handle(context.Background(), ev); res.Outcome != payforge.OutcomeDuplicate {
 		t.Fatalf("replay = %+v", res)
+	}
+}
+
+func TestWebhookLeavesTheOtherModesEventsAlone(t *testing.T) {
+	obj := `{"id":"sub_1","status":"active","customer":"cus_1","metadata":{"payforge_app":"taskboard","payforge_subject":"org-1"}}`
+	test := event("evt_t", "customer.subscription.created", "", obj)
+	live := bytes.Replace(event("evt_l", "customer.subscription.created", "", obj), []byte(`"livemode":false`), []byte(`"livemode":true`), 1)
+
+	for _, c := range []struct {
+		mode    stripe.Mode
+		payload []byte
+		acted   bool
+	}{
+		{stripe.ModeTest, test, true},
+		{stripe.ModeTest, live, false},
+		{stripe.ModeLive, live, true},
+		{stripe.ModeLive, test, false},
+	} {
+		w := wh()
+		w.Mode = c.mode
+		ev := parse(t, w, c.payload)
+		if acted := ev.Kind != payforge.EventIgnored; acted != c.acted {
+			t.Errorf("%s key, livemode %v: kind %s", c.mode, ev.Livemode, ev.Kind)
+		}
+		if !c.acted && (ev.Subscription != nil || ev.Subject != "" || ev.ID == "") {
+			t.Errorf("an event of the other mode carried details: %+v", ev)
+		}
+	}
+
+	// Without a mode nothing is read: a configuration error, not a bad signature.
+	w := wh()
+	w.Mode = ""
+	if _, err := w.Parse(test, sign(test, whSecret, time.Now())); err == nil || errors.Is(err, payforge.ErrSignatureInvalid) {
+		t.Fatalf("no mode: %v", err)
+	}
+}
+
+func TestKeyMode(t *testing.T) {
+	for key, want := range map[string]stripe.Mode{
+		"sk_test_abc": stripe.ModeTest, "rk_test_abc": stripe.ModeTest,
+		"sk_live_abc": stripe.ModeLive, "rk_live_abc": stripe.ModeLive,
+		"pk_test_abc": stripe.ModeLive, "something": stripe.ModeLive, // unknown is never taken for test
+	} {
+		if got := stripe.KeyMode(key); got != want {
+			t.Errorf("%s: %s", key, got)
+		}
+	}
+	_, srv := newFake(t)
+	c := newClient(t, load(t, "subscription-tool.json"), srv)
+	if c.Mode() != stripe.ModeTest {
+		t.Fatalf("client mode = %s", c.Mode())
 	}
 }

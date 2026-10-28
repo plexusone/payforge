@@ -3,7 +3,9 @@ package payforge_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -251,21 +253,42 @@ func TestLifecycleTheLaterPeriodBreaksATie(t *testing.T) {
 	}
 }
 
-func TestLifecycleLegacySubscriptionsNameTheirPlanInMetadata(t *testing.T) {
+func TestLifecycleKeylessPricesGrantOnlyWhenListed(t *testing.T) {
+	s := sub("sub_1", "active", "") // a price from before payforge: no lookup key, ID price_a
+	// The metadata names a better plan than the price is for; it is never trusted.
+	s.Metadata = map[string]string{"myapp_plan": "business", payforge.MetaPlan: "business"}
+
+	// Off by default: a keyless price grants nothing, whatever the metadata says.
 	r := newRig(t)
-	r.l.LegacyPrefixes = []string{"myapp"}
-	s := sub("sub_1", "active", "") // a price from before payforge: no lookup key
-	s.Metadata = map[string]string{"myapp_plan": "plus"}
 	r.reader.subs = []payforge.SubscriptionState{s}
-	res := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s))
-	if e := res.Entitlement; e == nil || e.Plan != "plus" || !e.Granted {
-		t.Fatalf("entitlement = %+v", e)
+	if e := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s)).Entitlement; e == nil || e.Granted {
+		t.Fatalf("unlisted keyless price granted: %+v", e)
 	}
-	// Without the prefix configured the metadata means nothing.
-	r2 := newRig(t)
-	r2.reader.subs = []payforge.SubscriptionState{s}
-	if e := r2.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s)).Entitlement; e == nil || e.Granted {
-		t.Fatalf("unconfigured: %+v", e)
+
+	// Listed, it grants the plan the host named for it, not the metadata's.
+	r = newRig(t)
+	r.l.LegacyPrices = map[string]string{"price_a": "plus"}
+	r.reader.subs = []payforge.SubscriptionState{s}
+	if e := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s)).Entitlement; e == nil || e.Plan != "plus" || !e.Granted {
+		t.Fatalf("listed keyless price: %+v", e)
+	}
+
+	// Another keyless price is not covered by the listing.
+	other := s
+	other.Items = []payforge.SubscriptionItem{{PriceID: "price_other"}}
+	r = newRig(t)
+	r.l.LegacyPrices = map[string]string{"price_a": "plus"}
+	r.reader.subs = []payforge.SubscriptionState{other}
+	if e := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, other)).Entitlement; e == nil || e.Granted {
+		t.Fatalf("another keyless price granted: %+v", e)
+	}
+
+	// A listing that names a plan the spec does not have grants nothing.
+	r = newRig(t)
+	r.l.LegacyPrices = map[string]string{"price_a": "platinum"}
+	r.reader.subs = []payforge.SubscriptionState{s}
+	if e := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s)).Entitlement; e == nil || e.Granted {
+		t.Fatalf("unknown listed plan granted: %+v", e)
 	}
 }
 
@@ -494,4 +517,164 @@ func TestLifecycleTheSameTierResolvesByPlanIDWhateverTheLineOrder(t *testing.T) 
 			t.Fatalf("%v: plan = %+v, err = %v", keys, res.Entitlement, err)
 		}
 	}
+}
+
+// recordingLocker records the keys it is asked for and whether each was released.
+type recordingLocker struct {
+	keys     []string
+	released int
+	err      error
+}
+
+func (l *recordingLocker) Lock(_ context.Context, key string) (func(), error) {
+	if l.err != nil {
+		return nil, l.err
+	}
+	l.keys = append(l.keys, key)
+	return func() { l.released++ }, nil
+}
+
+func TestLifecycleHoldsTheLockerPerAccount(t *testing.T) {
+	r := newRig(t)
+	lk := &recordingLocker{}
+	r.l.Locker = lk
+	s := sub("sub_1", "active", "taskboard/plus/month")
+	r.reader.subs = []payforge.SubscriptionState{s}
+	r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s))
+	if len(lk.keys) != 1 || lk.keys[0] != payforge.LockKey("taskboard", "org-1") || lk.released != 1 {
+		t.Fatalf("keys %v, released %d", lk.keys, lk.released)
+	}
+	// A duplicate is answered before locking; an ignored event never locks.
+	r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s))
+	r.handle(t, payforge.Event{ID: "evt_2", Kind: payforge.EventInvoicePaid})
+	if len(lk.keys) != 1 {
+		t.Fatalf("locked again: %v", lk.keys)
+	}
+
+	// A lock that cannot be had is an error to retry, and nothing is recorded.
+	lk.err = errors.New("lock is down")
+	if _, err := r.l.Handle(context.Background(), subEvent("evt_3", payforge.EventSubscriptionUpdated, s)); err == nil {
+		t.Fatal("no error when the lock failed")
+	}
+	if seen, err := r.store.Seen(context.Background(), "evt_3"); err != nil || seen {
+		t.Fatalf("recorded after a failed lock: %v %v", seen, err)
+	}
+}
+
+// countingLocker wraps a MemoryLocker and counts acquisitions and the most
+// holders at one time.
+type countingLocker struct {
+	inner          payforge.MemoryLocker
+	mu             sync.Mutex
+	held, max, got int
+}
+
+func (c *countingLocker) Lock(ctx context.Context, key string) (func(), error) {
+	unlock, err := c.inner.Lock(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	c.got++
+	c.held++
+	c.max = max(c.max, c.held)
+	c.mu.Unlock()
+	return func() {
+		c.mu.Lock()
+		c.held--
+		c.mu.Unlock()
+		unlock()
+	}, nil
+}
+
+func (c *countingLocker) holders() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.held
+}
+
+// lockCheckingReader records, for every provider read, how many reads ran at
+// once and whether the lock was held, so a Handle that read the provider
+// outside the lock would show it.
+type lockCheckingReader struct {
+	inner    payforge.SubscriptionReader
+	lk       *countingLocker
+	mu       sync.Mutex
+	inflight int
+	max      int
+	unlocked int
+}
+
+func (r *lockCheckingReader) Subscriptions(ctx context.Context, customerID string) ([]payforge.SubscriptionState, error) {
+	r.mu.Lock()
+	r.inflight++
+	r.max = max(r.max, r.inflight)
+	if r.lk.holders() != 1 {
+		r.unlocked++
+	}
+	r.mu.Unlock()
+	time.Sleep(time.Millisecond) // widen the window a missing lock would show in
+	subs, err := r.inner.Subscriptions(ctx, customerID)
+	r.mu.Lock()
+	r.inflight--
+	r.mu.Unlock()
+	return subs, err
+}
+
+func TestLifecycleUnderTheLockerAppliesTheNewestState(t *testing.T) {
+	const n = 8
+	r := newRig(t)
+	lk := &countingLocker{}
+	r.l.Locker = lk
+	reader := &lockCheckingReader{inner: r.reader, lk: lk}
+	r.l.Provider = reader
+	s := sub("sub_1", "active", "taskboard/plus/month")
+	r.reader.subs = []payforge.SubscriptionState{s}
+	done := make(chan error, n) // buffered, so no sender blocks if the test stops early
+	for i := range n {
+		go func() {
+			_, err := r.l.Handle(context.Background(), subEvent(fmt.Sprintf("evt_%d", i), payforge.EventSubscriptionUpdated, s))
+			done <- err
+		}()
+	}
+	for range n {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := len(r.sink.History()); got != n {
+		t.Fatalf("%d applied", got)
+	}
+	if lk.got != n || lk.max != 1 {
+		t.Fatalf("lock acquired %d times with at most %d holders, want %d and 1", lk.got, lk.max, n)
+	}
+	if reader.max != 1 || reader.unlocked != 0 {
+		t.Fatalf("provider read %d at once, %d times without the lock", reader.max, reader.unlocked)
+	}
+}
+
+func TestMemoryLockerExcludesAndHonorsTheContext(t *testing.T) {
+	var m payforge.MemoryLocker
+	ctx := context.Background()
+	unlock, err := m.Lock(ctx, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := m.Lock(ctx, "other") // another key is free
+	if err != nil {
+		t.Fatal(err)
+	}
+	other()
+	short, cancel := context.WithTimeout(ctx, 20*time.Millisecond)
+	defer cancel()
+	if _, err := m.Lock(short, "k"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a held key: %v", err)
+	}
+	unlock()
+	unlock() // a second release is harmless
+	again, err := m.Lock(ctx, "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again()
 }

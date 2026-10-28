@@ -8,6 +8,7 @@ import (
 
 	"github.com/plexusone/payforge"
 	"github.com/plexusone/payforge/stripe"
+	"github.com/plexusone/systemspec-pricingpackaging/pricingspec"
 )
 
 func TestChangedCustomerDetailsInsideTheKeysDayDoNotFail(t *testing.T) {
@@ -130,6 +131,41 @@ func TestURLsAreHttpsUnlessLocalAndCanBeLimitedToHosts(t *testing.T) {
 	}
 }
 
+func TestWithoutAllowedHostsOnlyLocalhostIsAccepted(t *testing.T) {
+	ctx := context.Background()
+	f, srv := newFake(t)
+	f.prices["taskboard/plus/month"] = "price_plus_m"
+	spec := load(t, "subscription-tool.json")
+	c, err := stripe.New(spec, stripe.Config{SecretKey: secretKey, APIURL: srv.URL})
+	if err != nil {
+		t.Fatalf("a client with no hosts can still be made, to sync: %v", err)
+	}
+	in := planIn("plus")
+	in.SuccessURL = "https://evil.example.net/b"
+	if _, err := c.CheckoutPlan(ctx, in); !errors.Is(err, payforge.ErrInvalidURL) || !strings.Contains(err.Error(), "AllowedURLHosts") {
+		t.Fatalf("checkout to any host with none allowed: %v", err)
+	}
+	if _, err := c.Portal(ctx, "cus_1", "https://evil.example.net/b"); !errors.Is(err, payforge.ErrInvalidURL) {
+		t.Fatalf("portal: %v", err)
+	}
+	m, err := stripe.New(load(t, "marketplace.json"), stripe.Config{SecretKey: secretKey, APIURL: srv.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.OnboardingLink(ctx, "acct_seller123", "https://evil.example.net/r", "https://evil.example.net/b"); !errors.Is(err, payforge.ErrInvalidURL) {
+		t.Fatalf("onboarding: %v", err)
+	}
+	in.SuccessURL, in.CancelURL = "http://localhost:3000/b", "http://localhost:3000/c"
+	if _, err := c.CheckoutPlan(ctx, in); err != nil {
+		t.Fatalf("localhost with none allowed: %v", err)
+	}
+	for _, bad := range []string{"", " ", "*.example.com", "https://app.example.com", "app.example.com:443"} {
+		if _, err := stripe.New(spec, stripe.Config{SecretKey: secretKey, AllowedURLHosts: []string{bad}}); err == nil {
+			t.Errorf("AllowedURLHosts %q was accepted", bad)
+		}
+	}
+}
+
 func TestTheSessionPlaceholderGoesBeforeAFragment(t *testing.T) {
 	f, srv := newFake(t)
 	f.prices["taskboard/business/month"] = "price_plus_m"
@@ -197,4 +233,132 @@ func TestSyncSaysWhenAProductWasDeleted(t *testing.T) {
 	if !errors.Is(err, stripe.ErrDeleted) || strings.Contains(err.Error(), "unarchive") {
 		t.Fatalf("err = %v", err)
 	}
+}
+
+// keyLocker records the keys it is asked for and whether each was released.
+type keyLocker struct {
+	keys     []string
+	released int
+}
+
+func (l *keyLocker) Lock(_ context.Context, key string) (func(), error) {
+	l.keys = append(l.keys, key)
+	return func() { l.released++ }, nil
+}
+
+func TestAPlanCheckoutHoldsTheLockerPerSubject(t *testing.T) {
+	f, srv := newFake(t)
+	f.prices["taskboard/plus/month"] = "price_plus_m"
+	lk := &keyLocker{}
+	c, err := stripe.New(load(t, "subscription-tool.json"), stripe.Config{SecretKey: secretKey, APIURL: srv.URL, AllowedURLHosts: testHosts, Locker: lk})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CheckoutPlan(context.Background(), planIn("plus")); err != nil {
+		t.Fatal(err)
+	}
+	if len(lk.keys) != 1 || lk.keys[0] != payforge.LockKey("taskboard", subj.ID) || lk.released != 1 {
+		t.Fatalf("keys %v, released %d", lk.keys, lk.released)
+	}
+}
+
+func TestAPlanCheckoutExpiresTheSubjectsOtherOpenOnes(t *testing.T) {
+	ctx := context.Background()
+	f, srv := newFake(t)
+	f.prices["taskboard/plus/month"] = "price_plus_m"
+	f.customers = []string{"cus_1"}
+	f.openSessions = []map[string]any{
+		{"id": "cs_old", "object": "checkout.session", "mode": "subscription", "status": "open", "metadata": map[string]any{"payforge_app": "taskboard"}},
+		{"id": "cs_other_app", "object": "checkout.session", "mode": "subscription", "status": "open", "metadata": map[string]any{"payforge_app": "craftmarket"}},
+		{"id": "cs_purchase", "object": "checkout.session", "mode": "payment", "status": "open", "metadata": map[string]any{"payforge_app": "taskboard"}},
+	}
+	c := newClient(t, load(t, "subscription-tool.json"), srv)
+	if _, err := c.CheckoutPlan(ctx, planIn("plus")); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count("POST", "/v1/checkout/sessions/cs_old/expire"); n != 1 {
+		t.Fatalf("the open plan checkout was expired %d times", n)
+	}
+	if f.count("POST", "/v1/checkout/sessions/cs_other_app/expire")+f.count("POST", "/v1/checkout/sessions/cs_purchase/expire") != 0 {
+		t.Fatal("another app's checkout or a purchase was expired")
+	}
+	if got := f.last("GET", "/v1/checkout/sessions").Form; got["customer"] != "cus_1" || got["status"] != "open" {
+		t.Fatalf("listed %v", got)
+	}
+	// The repeat is not a replay of the first: the expired session changed its key.
+	first := f.last("POST", "/v1/checkout/sessions").IdemKey
+	if _, err := c.CheckoutPlan(ctx, planIn("plus")); err != nil {
+		t.Fatal(err)
+	}
+	if again := f.last("POST", "/v1/checkout/sessions").IdemKey; again == first {
+		t.Fatal("the key did not change after a session was expired")
+	}
+
+	// A session that cannot be expired, such as one being paid, stops the checkout.
+	f.openSessions = []map[string]any{{"id": "cs_paying", "object": "checkout.session", "mode": "subscription", "status": "open", "metadata": map[string]any{"payforge_app": "taskboard"}}}
+	f.fail["POST /v1/checkout/sessions/cs_paying/expire"] = 400
+	before := f.count("POST", "/v1/checkout/sessions")
+	if _, err := c.CheckoutPlan(ctx, planIn("plus")); err == nil {
+		t.Fatal("a checkout was made while another could not be expired")
+	}
+	if f.count("POST", "/v1/checkout/sessions") != before {
+		t.Fatal("a session was created")
+	}
+}
+
+// renamed loads the marketplace spec with the seller-set product renamed.
+func renamed(t *testing.T, name string) *pricingspec.Spec {
+	t.Helper()
+	spec := load(t, "marketplace.json")
+	for i := range spec.Products {
+		if spec.Products[i].ID == "listing" {
+			spec.Products[i].Name = name
+		}
+	}
+	return spec
+}
+
+func TestASellerSetProductsNameIsPartOfItsKey(t *testing.T) {
+	ctx := context.Background()
+	t.Run("product checkout", func(t *testing.T) {
+		f, srv := newFake(t)
+		key := func(name string) string {
+			t.Helper()
+			_, err := newClient(t, renamed(t, name), srv).CheckoutProduct(ctx, payforge.ProductCheckout{
+				Subject: subj, Product: "listing", AmountCents: 2500, Reference: "purchase-9",
+				SuccessURL: okURL, CancelURL: cancelURL,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := f.last("POST", "/v1/checkout/sessions")
+			if c.Form["line_items[0][price_data][product_data][name]"] != name {
+				t.Fatalf("product name sent = %q", c.Form["line_items[0][price_data][product_data][name]"])
+			}
+			return c.IdemKey
+		}
+		if a, b := key("Listing"), key("Listing"); a != b {
+			t.Errorf("same request, keys %q and %q", a, b)
+		}
+		if a, b := key("Listing"), key("Featured listing"); a == b {
+			t.Error("a renamed product reused the key of the old name")
+		}
+	})
+	t.Run("sale checkout", func(t *testing.T) {
+		f, srv := newFake(t)
+		f.ready(true)
+		key := func(name string) string {
+			t.Helper()
+			if _, err := newClient(t, renamed(t, name), srv).CheckoutSale(ctx, saleIn("listing", 2500)); err != nil {
+				t.Fatal(err)
+			}
+			return f.last("POST", "/v1/checkout/sessions").IdemKey
+		}
+		if a, b := key("Listing"), key("Listing"); a != b {
+			t.Errorf("same request, keys %q and %q", a, b)
+		}
+		if a, b := key("Listing"), key("Featured listing"); a == b {
+			t.Error("a renamed product reused the key of the old name")
+		}
+	})
 }

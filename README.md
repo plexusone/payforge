@@ -62,7 +62,10 @@ With a key, the Stripe adapter implements the same interface:
 ```go
 import payforgestripe "github.com/plexusone/payforge/stripe"
 
-billing, err := payforgestripe.New(spec, payforgestripe.Config{SecretKey: key})
+billing, err := payforgestripe.New(spec, payforgestripe.Config{
+	SecretKey:       key,
+	AllowedURLHosts: []string{"app.example.com"}, // where buyers may be sent back to
+})
 if err != nil { return err }
 
 sess, err := billing.CheckoutPlan(ctx, payforge.PlanCheckout{
@@ -96,12 +99,19 @@ asking for a card.
 Webhooks are verified and reduced to a small event:
 
 ```go
-hook := payforgestripe.Webhook{Secrets: []string{platformSecret, connectSecret}}
+hook := payforgestripe.Webhook{
+	Mode:    billing.Mode(), // events of the other mode are ignored
+	Secrets: []string{platformSecret, connectSecret},
+}
 
 func handle(w http.ResponseWriter, r *http.Request) {
 	ev, err := hook.Read(r) // verifies the signature; the body is limited to 1 MiB
 	if errors.Is(err, payforge.ErrSignatureInvalid) {
 		http.Error(w, "bad signature", http.StatusBadRequest)
+		return
+	}
+	if err != nil { // too large, or unreadable: see examples/webhook
+		http.Error(w, "cannot read event", http.StatusInternalServerError)
 		return
 	}
 	// ev.Kind is a subscription, checkout, invoice, refund or account change,
@@ -126,6 +136,10 @@ A subscription grants while it is `active`, `trialing` or `past_due`. A price th
 spec does not have never grants.
 Everything written to the provider carries `payforge_app`, so several products
 can share one account and still be told apart.
+
+## Releases
+
+[v0.1.0](docs/releases/v0.1.0.md) · [Changelog](CHANGELOG.md)
 
 ## Development
 

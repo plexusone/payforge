@@ -160,7 +160,7 @@ type Connect interface {
   price, a seller-set product at the amount given, which must reach the minimum.
   Its objects carry the seller's account under `payforge_seller`.
 - Account IDs and URLs are checked before a request is made. URLs must be https
-  (http for localhost) without credentials, and `AllowedURLHosts` limits the hosts.
+  (http for localhost) without credentials, on a host in `AllowedURLHosts` (only localhost when it is empty).
 - A sale pays only an account carrying this app's `payforge_app` metadata
   (`ErrForeignAccount`), and the seller plan that sets the fee comes from the host.
 
@@ -176,12 +176,13 @@ ev, err := stripe.ParseEvent(payload, signatureHeader, secret)
   return an `Event` with no body so the host can acknowledge and ignore them.
 - Only a few stable fields are read, so an endpoint pinned to another API
   version still works.
-- `stripe.Webhook{Secrets, LegacyPrefixes}` verifies against any one of several
+- `stripe.Webhook{Mode, Secrets, LegacyPrefixes}` verifies against any one of several
   secrets (the platform's endpoint and the connected-account endpoint), checks the
   signature before reading the payload, and refuses a stale signature. A
   signature failure is `ErrSignatureInvalid`; a payload that verifies but cannot
   be read is a different error, so a host can answer 400 to one and 500 to the
-  other. `Read` limits the body to 1 MiB.
+  other. `Read` limits the body to 1 MiB. An event whose `livemode` differs from
+  the key's `Mode` is returned as `EventIgnored`.
 - The event keeps every line item of a subscription, not only the first, and
   never invents a period end: when the event does not give one it is zero. The
   period and the invoice's subscription are read from both places the API has put
@@ -214,7 +215,7 @@ type SubscriptionReader interface {     // the Stripe client implements it
 
 type Lifecycle struct {
     Spec *pricingspec.Spec; Store Store; Sink EntitlementSink
-    Provider SubscriptionReader; LegacyPrefixes []string
+    Provider SubscriptionReader; LegacyPrices map[string]string
 }
 
 func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
@@ -240,9 +241,9 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
 - **Only a price the spec has can grant.** A line grants through its lookup key
   only if the key names this app, a plan of the spec and an interval that plan
   has a price for. A price made by hand, another app's price, an arranged plan or
-  a free plan resolves to nothing. A price from before payforge with no key is
-  named by the subscription's metadata, and counts only for a self-serve plan
-  with prices. With several lines the highest plan wins.
+  a free plan resolves to nothing. A price from before payforge with no key
+  grants only when the host lists it in `LegacyPrices`, for the plan listed
+  there; metadata never names the plan. With several lines the highest plan wins.
 - `Entitlement` carries the plan the account should be on (the default plan when
   nothing grants), whether it is granted, the subscribed plan and its status, the
   period end as information, the subscription and customer, an `Origin` and the
@@ -262,7 +263,10 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
 - **Skips.** An event for a customer no account is known for is skipped without
   being recorded, so its redelivery applies once the host links the customer; any
   other skip, including a malformed event, is recorded. An event with no ID is an
-  error. The lifecycle does not serialize: the host holds a lock per account.
+  error. The lifecycle serializes per account only through an optional `Locker`
+  port (`Lock(ctx, key) (unlock func(), err error)`, keyed by `LockKey(app,
+  subject)`), which the Stripe adapter also holds around a plan checkout. A plan
+  checkout expires the subject's other open plan checkouts for the app first.
 - **Refunds** go to an optional `SaleSink`. Only a charge that carries a payforge
   product is a sale; a refund of a subscription's invoice, or of another app's
   charge, is skipped. The sink receives the buyer, the seller, the product, the
@@ -271,6 +275,12 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
   keeps the data. The total only grows, and a sink keeps the highest it has seen
   and treats a full refund as permanent, so a late event for an earlier partial
   refund cannot reopen a sale.
+- **Disputes** (`charge.dispute.created` and `.closed`) go to an optional
+  `DisputeSink` as a `ChargeDispute` naming the charge and payment intent, since
+  a dispute carries no sale metadata; the host matches it to its own record. A
+  closed dispute says whether it was won or lost and stays closed. A delayed
+  payment that fails (`checkout.session.async_payment_failed`) is normalized as
+  `EventCheckoutFailed` and left to the host.
 - **Connected account changes** go to an optional `SellerSink`, which receives
   the whole current state: whether the account can take charges and be paid
   out, and whether the details are submitted. With an `AccountReader` (the

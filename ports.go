@@ -86,6 +86,40 @@ type SaleSink interface {
 	ApplyRefund(ctx context.Context, r SaleRefund) error
 }
 
+// ChargeDispute is a dispute of a charge: a buyer asked their bank to take a
+// payment back. It names the charge and payment intent, not the buyer, because a
+// dispute carries no metadata of the sale; the host matches it to the purchase
+// or subscription it recorded for that charge.
+//
+// Open disputes withhold the amount; a host usually suspends what was bought
+// while one is open, restores it when Won, and treats Lost like a full refund.
+// Events can arrive out of order, so a sink keeps a dispute closed once it has
+// seen it closed.
+type ChargeDispute struct {
+	DisputeID     string
+	ChargeID      string
+	PaymentIntent string
+	AmountCents   int64
+	Currency      string
+	Reason        string
+	// Status is the provider's status. Closed is true once the dispute is
+	// decided, and Won or Lost says how; a closed dispute that is neither, such
+	// as an inquiry that was closed, took no money.
+	Status string
+	Closed bool
+	Won    bool
+	Lost   bool
+	// EventID is the provider event that led to this.
+	EventID string
+}
+
+// DisputeSink is the host's side for disputes. Like EntitlementSink,
+// ApplyDispute may be called more than once for the same event and must leave
+// the same state.
+type DisputeSink interface {
+	ApplyDispute(ctx context.Context, d ChargeDispute) error
+}
+
 // SellerAccount is a seller's connected account as the provider says now. A
 // seller can sell only while ChargesEnabled, and be paid out only while
 // PayoutsEnabled; either can turn off again after onboarding.
@@ -127,6 +161,61 @@ type Store interface {
 type SubscriptionReader interface {
 	// Subscriptions returns the customer's subscriptions that have not ended.
 	Subscriptions(ctx context.Context, customerID string) ([]SubscriptionState, error)
+}
+
+// Locker serializes work on one account across all of the host's processes,
+// for example with a database advisory lock. Lock blocks until the lock for key
+// is held or ctx is done, and returns the function that releases it. unlock is
+// called exactly once; if releasing fails, the host's implementation logs it,
+// and must make sure the lock cannot be held forever (a lock tied to a database
+// session or transaction is released when that ends).
+//
+// The lifecycle holds it around a subscription, refund or account event, and
+// the Stripe adapter around a plan checkout, both under LockKey of the app and
+// the account, so the two also exclude each other.
+type Locker interface {
+	Lock(ctx context.Context, key string) (unlock func(), err error)
+}
+
+// LockKey is the key a Locker is asked for: one per app and account.
+func LockKey(app, subject string) string { return "payforge/" + app + "/" + subject }
+
+// MemoryLocker is a Locker for one process, for tests and for a host that runs
+// a single instance.
+type MemoryLocker struct {
+	mu    sync.Mutex
+	locks map[string]chan struct{}
+}
+
+// Lock implements Locker.
+func (m *MemoryLocker) Lock(ctx context.Context, key string) (func(), error) {
+	for {
+		m.mu.Lock()
+		if m.locks == nil {
+			m.locks = map[string]chan struct{}{}
+		}
+		held, busy := m.locks[key]
+		if !busy {
+			done := make(chan struct{})
+			m.locks[key] = done
+			m.mu.Unlock()
+			var once sync.Once
+			return func() {
+				once.Do(func() {
+					m.mu.Lock()
+					delete(m.locks, key)
+					m.mu.Unlock()
+					close(done)
+				})
+			}, nil
+		}
+		m.mu.Unlock()
+		select {
+		case <-held:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }
 
 // MemoryStore is a Store that keeps everything in memory. It is for tests and
@@ -174,14 +263,16 @@ func (m *MemoryStore) MarkSeen(_ context.Context, eventID string) error {
 	return nil
 }
 
-// MemorySink is an EntitlementSink, SaleSink and SellerSink that keeps the latest entitlement for each
-// account in memory, with the history of what it was given.
+// MemorySink is an EntitlementSink, SaleSink, SellerSink and DisputeSink that
+// keeps the latest entitlement for each account in memory, with the history of
+// what it was given.
 type MemorySink struct {
-	mu      sync.Mutex
-	current map[string]Entitlement
-	history []Entitlement
-	refunds map[string]SaleRefund
-	sellers map[string]SellerAccount
+	mu       sync.Mutex
+	current  map[string]Entitlement
+	history  []Entitlement
+	refunds  map[string]SaleRefund
+	sellers  map[string]SellerAccount
+	disputes map[string]ChargeDispute
 }
 
 // NewMemorySink returns an empty MemorySink.
@@ -254,4 +345,26 @@ func (m *MemorySink) Seller(accountID string) (SellerAccount, bool) {
 	defer m.mu.Unlock()
 	a, ok := m.sellers[accountID]
 	return a, ok
+}
+
+// ApplyDispute implements DisputeSink. A closed dispute stays closed.
+func (m *MemorySink) ApplyDispute(_ context.Context, d ChargeDispute) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.disputes == nil {
+		m.disputes = map[string]ChargeDispute{}
+	}
+	if old, ok := m.disputes[d.DisputeID]; ok && old.Closed && !d.Closed {
+		return nil
+	}
+	m.disputes[d.DisputeID] = d
+	return nil
+}
+
+// Dispute returns the latest state applied for a dispute.
+func (m *MemorySink) Dispute(disputeID string) (ChargeDispute, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, ok := m.disputes[disputeID]
+	return d, ok
 }

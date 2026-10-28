@@ -141,7 +141,7 @@ func (l *live) waitEvent(typ, owner string) json.RawMessage {
 func signed(payload []byte) (string, stripe.Webhook) {
 	at := time.Now()
 	return fmt.Sprintf("t=%d,v1=%s", at.Unix(), hex.EncodeToString(webhook.ComputeSignature(at, payload, liveSecret))),
-		stripe.Webhook{Secrets: []string{liveSecret}}
+		stripe.Webhook{Mode: stripe.ModeTest, Secrets: []string{liveSecret}}
 }
 
 func TestLiveSubscriptions(t *testing.T) {
@@ -150,7 +150,7 @@ func TestLiveSubscriptions(t *testing.T) {
 	defer cancel()
 	l := &live{t: t, ctx: ctx, key: key, sc: stripesdk.NewClient(key), start: time.Now()}
 	spec := freshSpec(t, "subscription-tool.json")
-	c, err := stripe.New(spec, stripe.Config{SecretKey: key})
+	c, err := stripe.New(spec, stripe.Config{SecretKey: key, AllowedURLHosts: testHosts})
 	l.must(err, "new client")
 	t.Logf("app %s", spec.App)
 	t.Cleanup(func() { l.archive(spec) })
@@ -228,7 +228,12 @@ func TestLiveSubscriptions(t *testing.T) {
 		}
 		s2, err := c.CheckoutPlan(ctx, in)
 		l.must(err, "repeat")
-		l.observe("a repeated plan checkout returned the same session: %v", s1.ID == s2.ID)
+		// The repeat expires the first, so only one can be paid.
+		first, err := l.sc.V1CheckoutSessions.Retrieve(ctx, s1.ID, nil)
+		l.must(err, "retrieve first session")
+		if s2.ID == s1.ID || s2.URL == "" || first.Status != stripesdk.CheckoutSessionStatusExpired {
+			t.Fatalf("repeat: first %s is %s, second %s", s1.ID, first.Status, s2.ID)
+		}
 	})
 
 	t.Run("a real subscription is read, blocks a second checkout, and its events drive the lifecycle", func(t *testing.T) {
@@ -302,7 +307,7 @@ func TestLiveConnect(t *testing.T) {
 	defer cancel()
 	l := &live{t: t, ctx: ctx, key: key, sc: stripesdk.NewClient(key), start: time.Now()}
 	spec := freshSpec(t, "marketplace.json")
-	c, err := stripe.New(spec, stripe.Config{SecretKey: key})
+	c, err := stripe.New(spec, stripe.Config{SecretKey: key, AllowedURLHosts: testHosts})
 	l.must(err, "new client")
 	t.Cleanup(func() { l.archive(spec) })
 	_, err = c.Sync(ctx, false)

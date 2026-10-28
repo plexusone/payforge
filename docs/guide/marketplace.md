@@ -117,6 +117,10 @@ possible as written. Treat cross-border sellers as unsupported.
 - A one-time sale being paid. Record it yourself when your checkout completes
   (`EventCheckoutCompleted` with `Paid`), and match a later refund by payment
   intent.
-- Delayed payment methods that settle days later.
-- Payouts, disputes and transfer reversals; Stripe handles them and sends events
-  payforge ignores.
+- Delayed payment methods that settle days later: the success arrives as
+  `EventCheckoutCompleted` with `Paid` and the failure as `EventCheckoutFailed`;
+  both are yours to record.
+- Disputes reach a `DisputeSink` by charge, not by buyer; see
+  [disputes](lifecycle.md#disputes-and-failed-payments).
+- Payouts and transfer reversals; Stripe handles them and sends events payforge
+  ignores.

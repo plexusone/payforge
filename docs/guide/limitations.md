@@ -25,10 +25,15 @@ run yet**. See [Running the live test](#running-the-live-test).
 
 ## Design limits
 
-- **No locking.** `Lifecycle.Handle` and checkout do not serialize. Hold a lock
-  per account when events can be handled at once, and per subject around checkout
-  if a second subscription must never be possible. See
+- **Locking is the host's.** `Lifecycle.Handle` and plan checkout serialize per
+  account only through a `Locker` the host supplies (`Lifecycle.Locker`,
+  `stripe.Config.Locker`); `MemoryLocker` covers a single process. Without one,
+  events for one account handled at once can apply in either order, and two plan
+  checkouts made at the same moment can both stay open. See
   [the lifecycle](lifecycle.md#subscriptions-are-decided-from-stripe-not-from-the-event).
+- **One open plan checkout per subject.** A new plan checkout expires the
+  subject's other open plan checkouts for the app, so an abandoned tab cannot be
+  paid later. One-time purchases are not limited.
 - **One Stripe API call per subscription event, and per sale**, to read the
   provider's current state. That is the price of order not mattering.
 - **Cross-border sellers** are not supported; see
@@ -38,11 +43,17 @@ run yet**. See [Running the live test](#running-the-live-test).
 - **Plan IDs are permanent.** Renaming one creates a new product and leaves the
   old one; see [the catalog](catalog.md#changing-the-catalog).
 - **Fixed-price sale fees come from the spec**, not from the price Stripe holds.
-- **One-time sales being paid** and delayed payment methods are the host's to
-  record; only refunds are applied.
-- **Keyless legacy prices** are trusted through the metadata on the platform's own
-  subscriptions. Anyone who can write that metadata can name a self-serve plan for
-  a subscription with a keyless price.
+- **One-time sales being paid**, and a delayed payment failing
+  (`EventCheckoutFailed`), are the host's to record; refunds and disputes are
+  applied through their sinks.
+- **Disputes name the charge, not the buyer**: the host matches a
+  `ChargeDispute` to what it recorded for that charge, and decides whether to
+  suspend access or cancel a disputed subscription. `charge.dispute.updated` and
+  early fraud warnings are not mapped.
+- **Keyless legacy prices** grant nothing unless listed in
+  `Lifecycle.LegacyPrices`, each with the plan it is for; see
+  [the catalog](catalog.md#accounts-that-already-have-objects). There is no way
+  to have such a price named by metadata.
 - **In-memory ports** (`MemoryStore`, `MemorySink`) grow without bound and lose
   everything on restart. They are for tests.
 - **Stripe only.** The core is provider-neutral; there is no second adapter.
@@ -65,7 +76,8 @@ It checks, against the real API:
 - Syncing an empty account, repeating as unchanged, and a price amount that goes
   from A to B and back to A the same day.
 - Creating a customer, and a second call with a changed email.
-- A plan checkout: a hosted session carrying our metadata, and a repeat.
+- A plan checkout: a hosted session carrying our metadata, and a repeat that
+  expires the first.
 - A real subscription (made with Stripe's test card): reading it back, refusing a
   second checkout, and sending the events Stripe made for it through the webhook
   reader and the lifecycle, signed here with a secret of the test's own.

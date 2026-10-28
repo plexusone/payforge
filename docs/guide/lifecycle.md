@@ -46,10 +46,25 @@ matter:
   one.
 
 This costs one Stripe API call per subscription event. **Serialize per account:**
-`Handle` does not lock, so two events for the same account handled at the same
-time can apply in either order, and the later `Apply` may carry the older state.
-Hold a lock per `Subject` (one handler at a time per account is enough), or give
-your sink a version check. **Set `Provider` in production.** Without it the event alone decides, an ended subscription never
+two events for the same account handled at the same time can apply in either
+order, and the later `Apply` may carry the older state. Set `Locker` when more
+than one handler can run at once:
+
+```go
+type Locker interface {
+    Lock(ctx context.Context, key string) (unlock func(), err error)
+}
+```
+
+`Handle` holds it under `payforge.LockKey(app, subject)` from before Stripe is
+read until the event is recorded, for subscription, refund and account events.
+Implement it across your processes, for example with a Postgres advisory lock
+on a hash of the key held in a transaction, so a crashed process cannot keep it.
+Release failures are yours to log. A lock that cannot be taken makes `Handle`
+return an error, so Stripe redelivers. `payforge.MemoryLocker` serializes within
+one process. Give the same `Locker` to the Stripe client
+(`stripe.Config.Locker`) and plan checkout takes the same key, so checkout and
+webhooks for one account also run in turn. **Set `Provider` in production.** Without it the event alone decides, an ended subscription never
 grants whatever status it carries, and an out-of-order event can leave a stale
 plan.
 
@@ -62,9 +77,11 @@ plan.
 - **Only a price the spec has can grant.** The price's lookup key must name this
   app, a plan in the spec and an interval that plan prices. A price made by hand
   in the dashboard with the key `taskboard/enterprise/month` does not give anyone
-  the arranged Enterprise plan. A subscription from before payforge, with no
-  lookup key, is named by its metadata and counts only for a self-serve plan; a
-  price that has some other lookup key names nothing, whatever the metadata says.
+  the arranged Enterprise plan. A price from before payforge, with no lookup
+  key, grants nothing unless you list it in `LegacyPrices` (see
+  [accounts that already have objects](catalog.md#accounts-that-already-have-objects));
+  a price that has some other lookup key names nothing. A subscription's
+  metadata never names the plan.
 - With several lines or subscriptions, the highest tier wins; two plans in the
   same tier resolve by plan ID, so the order of the lines never matters.
 - **Events from a seller's own Stripe account are never acted on** for
@@ -108,6 +125,33 @@ An `Entitlement` carries `Subject`, `Plan`, `Granted`, `SubscribedPlan`, `Status
 `ValidUntil` (information; the status decides), `SubscriptionID`, `CustomerID`,
 `Origin` and `EventID`. `Origin` lets a host that also sets plans by hand tell
 where a change came from.
+
+## Disputes and failed payments
+
+A **dispute** (a chargeback) arrives as `EventDisputeOpened` and, once decided,
+`EventDisputeClosed`, from `charge.dispute.created` and `charge.dispute.closed`.
+Set `Disputes` to receive them; without it they are ignored.
+
+```go
+type DisputeSink interface {
+    ApplyDispute(ctx context.Context, d payforge.ChargeDispute) error
+}
+```
+
+A dispute carries no metadata of the sale, so `ChargeDispute` names the
+`ChargeID` and `PaymentIntent`, not the buyer: match it to the purchase or the
+subscription invoice you recorded for that charge. While a dispute is open the
+amount is withheld; a common policy is to suspend what was bought, restore it
+when `Won`, and treat `Lost` like a full refund. Stripe keeps billing a disputed
+subscription unless you cancel it. Events can arrive out of order, so keep a
+dispute closed once you have seen it closed. Disputes from a connected account
+are skipped.
+
+A **delayed payment that fails** (a bank debit, for example) arrives as
+`EventCheckoutFailed`, from `checkout.session.async_payment_failed`, after the
+session already completed unpaid. The lifecycle ignores it: a subscription's own
+events follow, and a one-time purchase is yours to record, so revoke it if you
+granted it on completion.
 
 ## Checking your own implementations
 

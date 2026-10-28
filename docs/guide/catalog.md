@@ -86,7 +86,22 @@ price made by hand in the Stripe dashboard can never give anyone Enterprise. See
 ## Accounts that already have objects
 
 If the Stripe account was used before payforge, subscriptions and customers
-exist with metadata of the host's own naming. Give the webhook reader and the
-lifecycle the prefix the host used (`LegacyPrefixes: []string{"myapp"}`) and
-`myapp_organization_id` and `myapp_plan` are read as the subject and the plan.
-A legacy subscription grants only a self-serve plan that has prices.
+exist with metadata of the host's own naming. Give the webhook reader the prefix
+the host used (`LegacyPrefixes: []string{"myapp"}`) and `myapp_organization_id`
+is read as the subject (and `myapp_plan` as the event's `Plan`, for information).
+
+Their prices have no lookup key, so by default they **grant nothing**. To keep
+existing subscribers on their plans, list each such price and the plan it is
+for in the lifecycle, and only those prices grant, and only that plan:
+
+```go
+life.LegacyPrices = map[string]string{
+    "price_1Abc...": "plus",     // the old monthly Plus price
+    "price_1Def...": "business",
+}
+```
+
+The subscription's metadata is never trusted to name the plan: anyone who can
+edit it, in the dashboard or through the API, could otherwise name a better
+one. Move legacy subscribers to synced prices when you can and remove the
+listing.

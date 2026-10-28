@@ -35,9 +35,11 @@ type Result struct {
 	Reason string
 	// Entitlement is what was applied, for OutcomeApplied.
 	Entitlement *Entitlement
-	// Refund and Seller are what was applied for a refund or an account change.
-	Refund *SaleRefund
-	Seller *SellerAccount
+	// Refund, Seller and Dispute are what was applied for a refund, an account
+	// change or a dispute.
+	Refund  *SaleRefund
+	Seller  *SellerAccount
+	Dispute *ChargeDispute
 }
 
 // Lifecycle turns webhook events into entitlements. It holds no state of its own:
@@ -60,13 +62,26 @@ type Lifecycle struct {
 	// Sellers receives changes to a seller's connected account. Without it an
 	// account change is ignored.
 	Sellers SellerSink
+	// Locker, when set, is held per account around each subscription, refund
+	// and account event, from before the provider is read until the event is
+	// recorded, so two events for one account handled at once by different
+	// processes apply in turn and the later one applies the newer state.
+	// Without it Handle does not serialize; set it when webhooks can be handled
+	// concurrently.
+	Locker Locker
+	// Disputes receives disputes of charges. Without it a dispute is ignored.
+	Disputes DisputeSink
 	// Accounts, when set, is read for a connected account's current state
 	// instead of trusting the event's, for the same reason as Provider. Set it
 	// in production.
 	Accounts AccountReader
-	// LegacyPrefixes are host metadata prefixes read as aliases for the subject
-	// and plan, as in the webhook reader.
-	LegacyPrefixes []string
+	// LegacyPrices maps the ID of a price made before payforge, which has no
+	// lookup key, to the plan it grants. It is empty by default, and then a price
+	// without a lookup key never grants. Only the prices listed here grant, and
+	// only the plan named here: a subscription's metadata is never trusted to name
+	// the plan, because anyone who can edit it could name a better one. A plan the
+	// spec does not have grants nothing.
+	LegacyPrices map[string]string
 }
 
 // Handle processes one event. It returns an error only when something failed that
@@ -77,11 +92,10 @@ type Lifecycle struct {
 // attempt is retried and a repeated one is a no-op. An event with no ID is an
 // error: the ID is what makes processing once possible.
 //
-// Handle does not serialize events. Two events for the same account handled at
-// the same time can apply in either order, and the later Apply may carry the
-// older state. A host that handles webhooks concurrently should hold a lock per
-// account (Entitlement.Subject) around Handle; one handler at a time per account
-// is enough.
+// Without a Locker Handle does not serialize events: two events for the same
+// account handled at the same time can apply in either order, and the later
+// Apply may carry the older state. A host that handles webhooks concurrently
+// sets Locker.
 func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 	if l.Spec == nil || l.Store == nil || l.Sink == nil {
 		return Result{}, errors.New("payforge: lifecycle needs a spec, a store and a sink")
@@ -92,7 +106,9 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 		return l.handleRefund(ctx, ev)
 	case EventAccountUpdated:
 		return l.handleAccount(ctx, ev)
-	case EventCheckoutCompleted, EventInvoicePaid, EventInvoiceFailed:
+	case EventDisputeOpened, EventDisputeClosed:
+		return l.handleDispute(ctx, ev)
+	case EventCheckoutCompleted, EventCheckoutFailed, EventInvoicePaid, EventInvoiceFailed:
 		// A subscription's checkout and renewals are applied from the
 		// subscription's own events, which follow; a one-time sale is the
 		// host's own to record when its checkout completes.
@@ -121,6 +137,17 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 	if subject == "" {
 		return unknownAccount("no account is known for the subscription"), nil
 	}
+	unlock, err := l.lock(ctx, subject)
+	if err != nil {
+		return Result{}, err
+	}
+	defer unlock()
+	// Another handler may have processed this event while this one waited.
+	if dup, err := l.duplicate(ctx, ev); err != nil {
+		return Result{}, err
+	} else if dup {
+		return Result{Outcome: OutcomeDuplicate}, nil
+	}
 
 	subs := []SubscriptionState{*ev.Subscription}
 	if l.Provider != nil && ev.CustomerID != "" {
@@ -143,6 +170,21 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error) {
 		return Result{}, fmt.Errorf("payforge: record event: %w", err)
 	}
 	return Result{Outcome: OutcomeApplied, Entitlement: &e}, nil
+}
+
+// lock holds the Locker for an account, and is a no-op without one.
+func (l *Lifecycle) lock(ctx context.Context, subject string) (func(), error) {
+	if l.Locker == nil {
+		return func() {}, nil
+	}
+	unlock, err := l.Locker.Lock(ctx, LockKey(l.Spec.App, subject))
+	if err != nil {
+		return nil, fmt.Errorf("payforge: lock account: %w", err)
+	}
+	if unlock == nil {
+		return func() {}, nil
+	}
+	return unlock, nil
 }
 
 // subject resolves the account: the event's metadata first, then the host's
@@ -220,13 +262,11 @@ func (l *Lifecycle) entitlement(subject string, ev Event, subs []SubscriptionSta
 
 // planOf resolves a subscription to a plan of the spec. A price's lookup key
 // names the plan and interval for a price payforge synced, and counts only if
-// the spec has that price. A price without a key, from before payforge, is named
-// by the subscription's metadata, and counts only for a self-serve plan. A key for
-// another app, a plan or interval the spec does not have, any other key, or an
-// arranged plan resolves to nothing, so a price made by hand with a key can never
-// grant. A keyless price is trusted as far as the metadata on the platform's own
-// subscriptions is, which is why events from connected accounts never reach here. With several
-// lines the highest plan wins.
+// the spec has that price. A price without a key, from before payforge, counts
+// only when the host listed it in LegacyPrices, for the plan listed there. A key
+// for another app, a plan or interval the spec does not have, any other key, or
+// an unlisted keyless price resolves to nothing, so a price made by hand can
+// never grant. With several lines the highest plan wins.
 func (l *Lifecycle) planOf(s SubscriptionState) (pricingspec.Plan, bool) {
 	var best pricingspec.Plan
 	bestRank, found := 0, false
@@ -243,11 +283,11 @@ func (l *Lifecycle) planOf(s SubscriptionState) (pricingspec.Plan, bool) {
 			}
 			continue
 		}
-		if it.LookupKey != "" {
+		if it.LookupKey != "" || it.PriceID == "" {
 			continue // a price with a key of its own that is not ours names nothing
 		}
-		if id := MetadataPlan(s.Metadata, l.LegacyPrefixes); id != "" {
-			if p, has := l.Spec.Plan(id); has && p.SelfServe && len(p.Prices) > 0 {
+		if id, listed := l.LegacyPrices[it.PriceID]; listed {
+			if p, has := l.Spec.Plan(id); has {
 				consider(p)
 			}
 		}

@@ -1,0 +1,202 @@
+{
+  "irVersion": "1.0",
+  "project": "payforge",
+  "repository": "https://github.com/plexusone/payforge",
+  "versioning": "semver",
+  "commitConvention": "conventional",
+  "maintainers": [
+    "plexusone",
+    "johncwang@gmail.com"
+  ],
+  "releases": [
+    {
+      "version": "v0.1.0",
+      "date": "2026-10-28",
+      "highlights": [
+        {
+          "description": "A billing runtime that reads a product's pricing and packaging from a pricing spec: it computes the products and prices a provider should hold, starts checkout and the customer portal, and turns a paid subscription into an entitlement through ports the host supplies",
+          "commit": "260f1f3"
+        },
+        {
+          "description": "Fails at startup when billing is half configured, and runs every account on the spec's default plan when no provider is configured",
+          "commit": "4746a52"
+        },
+        {
+          "description": "A Stripe adapter for customers, plan and one-time checkout, the customer portal, Connect Express sellers with destination-charge sales, catalog sync with a dry run, and webhook verification",
+          "commit": "bfeb668"
+        },
+        {
+          "description": "A lifecycle that decides entitlement from the provider's current state when `Lifecycle.Provider` is set, so replays and the order webhooks arrive in do not matter, serializes concurrent handling per account when `Lifecycle.Locker` is set, and applies refunds, seller account changes and disputes through sinks",
+          "commit": "a1bebb2"
+        }
+      ],
+      "added": [
+        {
+          "description": "`Billing` port and `Disabled` free mode: with no provider every account is on the spec's default plan and anything that needs a provider reports it is not configured",
+          "commit": "260f1f3",
+          "rmis": [
+            "RMI-PAYFORGE-007"
+          ]
+        },
+        {
+          "description": "`CheckStartup` requires a valid spec, a webhook secret (two with a marketplace) and something to sell when a provider key is set, and names what is missing without ever printing a secret",
+          "commit": "4746a52",
+          "rmis": [
+            "RMI-PAYFORGE-006"
+          ]
+        },
+        {
+          "description": "`ProviderPlanFor` computes the products and prices a provider should hold, with stable lookup keys and a `payforge_app` tag so several products can share one account",
+          "commit": "639c2ff",
+          "rmis": [
+            "RMI-PAYFORGE-008"
+          ]
+        },
+        {
+          "description": "Product checkout, customers, errors and the subscription grant rule: `active`, `trialing` and `past_due` grant, and a price the spec does not have never grants",
+          "commit": "f7e8b64",
+          "rmis": [
+            "RMI-PAYFORGE-009"
+          ]
+        },
+        {
+          "description": "`stripe` adapter with customers keyed to the host's subject, plan and one-time checkout, and customer portal sessions; idempotency keys cover every parameter Stripe compares",
+          "commit": "bfeb668",
+          "rmis": [
+            "RMI-PAYFORGE-009",
+            "RMI-PAYFORGE-010"
+          ]
+        },
+        {
+          "description": "Catalog sync to a Stripe account by lookup key, with a dry run; it never deletes and a changed amount creates a new price and moves the key to it",
+          "commit": "e0e7fd7",
+          "rmis": [
+            "RMI-PAYFORGE-013"
+          ]
+        },
+        {
+          "description": "Webhook verification against several signing secrets, reduced to a normalized event; `Webhook.Mode` is required and events of the other mode are ignored",
+          "commit": "fa5e779",
+          "rmis": [
+            "RMI-PAYFORGE-012"
+          ]
+        },
+        {
+          "description": "Store and entitlement-sink ports with in-memory implementations",
+          "commit": "a80eb82",
+          "rmis": [
+            "RMI-PAYFORGE-014"
+          ]
+        },
+        {
+          "description": "`Lifecycle.Handle` turns subscription events into entitlements from the provider's current state, idempotent by event, skipping connected-account events and keeping events for unknown customers retryable",
+          "commit": "a1bebb2",
+          "rmis": [
+            "RMI-PAYFORGE-015"
+          ]
+        },
+        {
+          "description": "Connect Express accounts, onboarding links, account state and destination-charge sales with a platform fee; a sale refuses a seller that cannot take charges or that this app did not create",
+          "commit": "3bed862",
+          "rmis": [
+            "RMI-PAYFORGE-011"
+          ]
+        },
+        {
+          "description": "Refunds of payforge sales and seller account changes applied through optional sale and seller sinks",
+          "commit": "21660f3",
+          "rmis": [
+            "RMI-PAYFORGE-017"
+          ]
+        },
+        {
+          "description": "Checkout, portal and onboarding URLs must be https (or http for localhost) and are limited to `AllowedURLHosts`; `localhost`, `127.0.0.1` and `::1` are always accepted, even when the list does not name them",
+          "commit": "acbf1fd",
+          "rmis": [
+            "RMI-PAYFORGE-022"
+          ]
+        },
+        {
+          "description": "Prices without a lookup key grant a plan only when listed in `Lifecycle.LegacyPrices`; metadata never names a plan",
+          "commit": "d83ca60",
+          "rmis": [
+            "RMI-PAYFORGE-022"
+          ]
+        },
+        {
+          "description": "Disputes and failed delayed payments become events, and disputes reach an optional `Lifecycle.Disputes` sink; the lifecycle ignores a failed delayed payment (`EventCheckoutFailed`), which the host handles itself",
+          "commit": "c864306",
+          "rmis": [
+            "RMI-PAYFORGE-022"
+          ]
+        },
+        {
+          "description": "Optional `Locker` port serializes the lifecycle and plan checkout per account, with `MemoryLocker` for a single process; a new plan checkout expires the subject's other open ones",
+          "commit": "4aa3c1f",
+          "rmis": [
+            "RMI-PAYFORGE-022"
+          ]
+        },
+        {
+          "description": "Examples of a catalog sync, a pricing page, a webhook endpoint and limit checks, each run by a test without a Stripe account",
+          "commit": "d23e5a1",
+          "rmis": [
+            "RMI-PAYFORGE-020"
+          ]
+        }
+      ],
+      "documentation": [
+        {
+          "description": "Specifications: product and technical requirements, plan and roadmap",
+          "commit": "c97484c"
+        },
+        {
+          "description": "A user guide covering the catalog, checkout and the portal, webhooks, the lifecycle, marketplaces and known limitations, built as an MkDocs site",
+          "commit": "1649479",
+          "rmis": [
+            "RMI-PAYFORGE-019"
+          ]
+        }
+      ],
+      "tests": [
+        {
+          "description": "Tests for startup checks, free mode, lookup keys and the provider plan, with golden files",
+          "commit": "7f5101a",
+          "rmis": [
+            "RMI-PAYFORGE-006"
+          ]
+        },
+        {
+          "description": "The Stripe adapter, sync, webhooks and Connect tested against a fake Stripe API that keeps state and enforces idempotency keys",
+          "commit": "21ae82c",
+          "rmis": [
+            "RMI-PAYFORGE-009"
+          ]
+        },
+        {
+          "description": "`payforgetest` conformance suites for stores and sinks, and lifecycle tests for replays, late events, unknown prices and failures",
+          "commit": "778c12a",
+          "rmis": [
+            "RMI-PAYFORGE-016"
+          ]
+        },
+        {
+          "description": "An opt-in live test against Stripe's test mode that runs only with a test-mode key",
+          "commit": "dc42f7b",
+          "rmis": [
+            "RMI-PAYFORGE-021"
+          ]
+        }
+      ],
+      "infrastructure": [
+        {
+          "description": "Module, license, lint configuration and CI workflows",
+          "commit": "2d79f83",
+          "rmis": [
+            "RMI-PAYFORGE-005"
+          ]
+        }
+      ]
+    }
+  ]
+}
