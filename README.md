@@ -110,6 +110,10 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad signature", http.StatusBadRequest)
 		return
 	}
+	if err != nil { // too large, or unreadable: see examples/webhook
+		http.Error(w, "cannot read event", http.StatusInternalServerError)
+		return
+	}
 	// ev.Kind is a subscription, checkout, invoice, refund or account change,
 	// or payforge.EventIgnored for anything else: acknowledge it and move on.
 }

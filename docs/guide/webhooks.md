@@ -9,6 +9,9 @@ hook := stripe.Webhook{
     Secrets: []string{platformSecret, connectSecret},
 }
 ev, err := hook.Read(r) // r is the *http.Request
+if err != nil {
+    // Answer 4xx or 5xx; never pass ev on: it is empty.
+}
 ```
 
 A complete handler is [`examples/webhook`](https://github.com/plexusone/payforge/tree/main/examples/webhook).
