@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -560,25 +561,95 @@ func TestLifecycleHoldsTheLockerPerAccount(t *testing.T) {
 	}
 }
 
+// countingLocker wraps a MemoryLocker and counts acquisitions and the most
+// holders at one time.
+type countingLocker struct {
+	inner          payforge.MemoryLocker
+	mu             sync.Mutex
+	held, max, got int
+}
+
+func (c *countingLocker) Lock(ctx context.Context, key string) (func(), error) {
+	unlock, err := c.inner.Lock(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	c.got++
+	c.held++
+	c.max = max(c.max, c.held)
+	c.mu.Unlock()
+	return func() {
+		c.mu.Lock()
+		c.held--
+		c.mu.Unlock()
+		unlock()
+	}, nil
+}
+
+func (c *countingLocker) holders() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.held
+}
+
+// lockCheckingReader records, for every provider read, how many reads ran at
+// once and whether the lock was held, so a Handle that read the provider
+// outside the lock would show it.
+type lockCheckingReader struct {
+	inner    payforge.SubscriptionReader
+	lk       *countingLocker
+	mu       sync.Mutex
+	inflight int
+	max      int
+	unlocked int
+}
+
+func (r *lockCheckingReader) Subscriptions(ctx context.Context, customerID string) ([]payforge.SubscriptionState, error) {
+	r.mu.Lock()
+	r.inflight++
+	r.max = max(r.max, r.inflight)
+	if r.lk.holders() != 1 {
+		r.unlocked++
+	}
+	r.mu.Unlock()
+	time.Sleep(time.Millisecond) // widen the window a missing lock would show in
+	subs, err := r.inner.Subscriptions(ctx, customerID)
+	r.mu.Lock()
+	r.inflight--
+	r.mu.Unlock()
+	return subs, err
+}
+
 func TestLifecycleUnderTheLockerAppliesTheNewestState(t *testing.T) {
+	const n = 8
 	r := newRig(t)
-	r.l.Locker = &payforge.MemoryLocker{}
+	lk := &countingLocker{}
+	r.l.Locker = lk
+	reader := &lockCheckingReader{inner: r.reader, lk: lk}
+	r.l.Provider = reader
 	s := sub("sub_1", "active", "taskboard/plus/month")
 	r.reader.subs = []payforge.SubscriptionState{s}
-	done := make(chan error)
-	for i := range 8 {
+	done := make(chan error, n) // buffered, so no sender blocks if the test stops early
+	for i := range n {
 		go func() {
 			_, err := r.l.Handle(context.Background(), subEvent(fmt.Sprintf("evt_%d", i), payforge.EventSubscriptionUpdated, s))
 			done <- err
 		}()
 	}
-	for range 8 {
+	for range n {
 		if err := <-done; err != nil {
 			t.Fatal(err)
 		}
 	}
-	if n := len(r.sink.History()); n != 8 {
-		t.Fatalf("%d applied", n)
+	if got := len(r.sink.History()); got != n {
+		t.Fatalf("%d applied", got)
+	}
+	if lk.got != n || lk.max != 1 {
+		t.Fatalf("lock acquired %d times with at most %d holders, want %d and 1", lk.got, lk.max, n)
+	}
+	if reader.max != 1 || reader.unlocked != 0 {
+		t.Fatalf("provider read %d at once, %d times without the lock", reader.max, reader.unlocked)
 	}
 }
 
