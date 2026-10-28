@@ -362,3 +362,35 @@ func TestASellerSetProductsNameIsPartOfItsKey(t *testing.T) {
 		}
 	})
 }
+
+func TestALiveKeyNeverRedirectsToLoopback(t *testing.T) {
+	ctx := context.Background()
+	f, srv := newFake(t)
+	f.prices["taskboard/plus/month"] = "price_plus_m"
+	spec := load(t, "subscription-tool.json")
+	const liveKey = "sk_live_example"
+
+	for _, h := range []string{"localhost", "127.0.0.1"} {
+		if _, err := stripe.New(spec, stripe.Config{SecretKey: liveKey, APIURL: srv.URL, AllowedURLHosts: []string{"app.example.com", h}}); err == nil {
+			t.Errorf("a live key with %q allowed was accepted", h)
+		}
+	}
+
+	live, err := stripe.New(spec, stripe.Config{SecretKey: liveKey, APIURL: srv.URL, AllowedURLHosts: []string{"app.example.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live.Mode() != stripe.ModeLive {
+		t.Fatalf("mode = %q, want live", live.Mode())
+	}
+	for _, bad := range []string{"http://localhost:3000/b", "https://localhost/b", "http://127.0.0.1/b", "http://[::1]:8080/b"} {
+		in := planIn("plus")
+		in.SuccessURL = bad
+		if _, err := live.CheckoutPlan(ctx, in); !errors.Is(err, payforge.ErrInvalidURL) {
+			t.Errorf("live checkout to %s: %v, want ErrInvalidURL", bad, err)
+		}
+		if _, err := live.Portal(ctx, "cus_1", bad); !errors.Is(err, payforge.ErrInvalidURL) {
+			t.Errorf("live portal to %s: %v, want ErrInvalidURL", bad, err)
+		}
+	}
+}
