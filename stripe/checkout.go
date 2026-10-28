@@ -235,8 +235,9 @@ func (c *Client) CheckoutProduct(ctx context.Context, in payforge.ProductCheckou
 		PaymentIntentData: &stripesdk.CheckoutSessionCreatePaymentIntentDataParams{Metadata: meta},
 	}
 	if in.Reference != "" {
-		params.SetIdempotencyKey(idemKey("product", c.spec.App, in.Subject.ID, product.ID, in.Reference,
-			fmt.Sprint(in.AmountCents), linePrice(item), in.SuccessURL, in.CancelURL))
+		parts := []string{c.spec.App, in.Subject.ID, product.ID, in.Reference,
+			fmt.Sprint(in.AmountCents), in.SuccessURL, in.CancelURL}
+		params.SetIdempotencyKey(idemKey("product", append(parts, lineKeyParts(item)...)...))
 	}
 	sess, err := c.sc.V1CheckoutSessions.Create(ctx, params)
 	if err != nil {
@@ -284,12 +285,21 @@ func (c *Client) productLine(ctx context.Context, id string, amount int64) (*pri
 	return product, item, nil
 }
 
-// linePrice is the synced price a line uses, empty for a seller-set amount. A key
-// that includes it is not replayed against a different price after a sync moves
-// the lookup key.
-func linePrice(item *stripesdk.CheckoutSessionCreateLineItemParams) string {
+// lineKeyParts are the parts of a line Stripe compares under an idempotency
+// key: the synced price of a fixed-price product, or the currency, amount and
+// product name of a seller-set one. A key that includes them is not replayed
+// against a different price after a sync moves the lookup key, and is not
+// refused after the spec renames a product.
+func lineKeyParts(item *stripesdk.CheckoutSessionCreateLineItemParams) []string {
 	if item.Price != nil {
-		return *item.Price
+		return []string{"price", *item.Price}
 	}
-	return ""
+	parts := []string{"price_data"}
+	if pd := item.PriceData; pd != nil {
+		parts = append(parts, stripesdk.StringValue(pd.Currency), fmt.Sprint(stripesdk.Int64Value(pd.UnitAmount)))
+		if pd.ProductData != nil {
+			parts = append(parts, stripesdk.StringValue(pd.ProductData.Name))
+		}
+	}
+	return parts
 }

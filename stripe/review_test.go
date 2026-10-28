@@ -8,6 +8,7 @@ import (
 
 	"github.com/plexusone/payforge"
 	"github.com/plexusone/payforge/stripe"
+	"github.com/plexusone/systemspec-pricingpackaging/pricingspec"
 )
 
 func TestChangedCustomerDetailsInsideTheKeysDayDoNotFail(t *testing.T) {
@@ -303,4 +304,61 @@ func TestAPlanCheckoutExpiresTheSubjectsOtherOpenOnes(t *testing.T) {
 	if f.count("POST", "/v1/checkout/sessions") != before {
 		t.Fatal("a session was created")
 	}
+}
+
+// renamed loads the marketplace spec with the seller-set product renamed.
+func renamed(t *testing.T, name string) *pricingspec.Spec {
+	t.Helper()
+	spec := load(t, "marketplace.json")
+	for i := range spec.Products {
+		if spec.Products[i].ID == "listing" {
+			spec.Products[i].Name = name
+		}
+	}
+	return spec
+}
+
+func TestASellerSetProductsNameIsPartOfItsKey(t *testing.T) {
+	ctx := context.Background()
+	t.Run("product checkout", func(t *testing.T) {
+		f, srv := newFake(t)
+		key := func(name string) string {
+			t.Helper()
+			_, err := newClient(t, renamed(t, name), srv).CheckoutProduct(ctx, payforge.ProductCheckout{
+				Subject: subj, Product: "listing", AmountCents: 2500, Reference: "purchase-9",
+				SuccessURL: okURL, CancelURL: cancelURL,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := f.last("POST", "/v1/checkout/sessions")
+			if c.Form["line_items[0][price_data][product_data][name]"] != name {
+				t.Fatalf("product name sent = %q", c.Form["line_items[0][price_data][product_data][name]"])
+			}
+			return c.IdemKey
+		}
+		if a, b := key("Listing"), key("Listing"); a != b {
+			t.Errorf("same request, keys %q and %q", a, b)
+		}
+		if a, b := key("Listing"), key("Featured listing"); a == b {
+			t.Error("a renamed product reused the key of the old name")
+		}
+	})
+	t.Run("sale checkout", func(t *testing.T) {
+		f, srv := newFake(t)
+		f.ready(true)
+		key := func(name string) string {
+			t.Helper()
+			if _, err := newClient(t, renamed(t, name), srv).CheckoutSale(ctx, saleIn("listing", 2500)); err != nil {
+				t.Fatal(err)
+			}
+			return f.last("POST", "/v1/checkout/sessions").IdemKey
+		}
+		if a, b := key("Listing"), key("Listing"); a != b {
+			t.Errorf("same request, keys %q and %q", a, b)
+		}
+		if a, b := key("Listing"), key("Featured listing"); a == b {
+			t.Error("a renamed product reused the key of the old name")
+		}
+	})
 }

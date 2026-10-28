@@ -198,8 +198,9 @@ func (c *Client) CheckoutSale(ctx context.Context, in payforge.Sale) (payforge.S
 		PaymentIntentData: pi,
 	}
 	if in.Reference != "" {
-		params.SetIdempotencyKey(idemKey("sale", c.spec.App, in.Buyer.ID, in.SellerAccount, product.ID, in.Reference,
-			fmt.Sprint(in.AmountCents), fmt.Sprint(fee), linePrice(item), in.SuccessURL, in.CancelURL))
+		parts := []string{c.spec.App, in.Buyer.ID, in.SellerAccount, product.ID, in.Reference,
+			fmt.Sprint(in.AmountCents), fmt.Sprint(fee), in.SuccessURL, in.CancelURL}
+		params.SetIdempotencyKey(idemKey("sale", append(parts, lineKeyParts(item)...)...))
 	}
 	sess, err := c.sc.V1CheckoutSessions.Create(ctx, params)
 	if err != nil {
