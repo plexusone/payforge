@@ -26,7 +26,7 @@
           "commit": "bfeb668"
         },
         {
-          "description": "A lifecycle that decides entitlement from the provider's current state, so replays and the order webhooks arrive in do not matter, and applies refunds, seller account changes and disputes through sinks",
+          "description": "A lifecycle that decides entitlement from the provider's current state when `Lifecycle.Provider` is set, so replays and the order webhooks arrive in do not matter, serializes concurrent handling per account when `Lifecycle.Locker` is set, and applies refunds, seller account changes and disputes through sinks",
           "commit": "a1bebb2"
         }
       ],
@@ -110,7 +110,7 @@
           ]
         },
         {
-          "description": "Checkout, portal and onboarding URLs must be https (or http for localhost) and are limited to `AllowedURLHosts`",
+          "description": "Checkout, portal and onboarding URLs must be https (or http for localhost) and are limited to `AllowedURLHosts`; `localhost`, `127.0.0.1` and `::1` are always accepted, even when the list does not name them",
           "commit": "acbf1fd",
           "rmis": [
             "RMI-PAYFORGE-022"
@@ -124,7 +124,7 @@
           ]
         },
         {
-          "description": "Disputes and failed delayed payments become events, and disputes reach an optional `Lifecycle.Disputes` sink",
+          "description": "Disputes and failed delayed payments become events, and disputes reach an optional `Lifecycle.Disputes` sink; the lifecycle ignores a failed delayed payment (`EventCheckoutFailed`), which the host handles itself",
           "commit": "c864306",
           "rmis": [
             "RMI-PAYFORGE-022"
