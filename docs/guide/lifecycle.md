@@ -62,9 +62,11 @@ plan.
 - **Only a price the spec has can grant.** The price's lookup key must name this
   app, a plan in the spec and an interval that plan prices. A price made by hand
   in the dashboard with the key `taskboard/enterprise/month` does not give anyone
-  the arranged Enterprise plan. A subscription from before payforge, with no
-  lookup key, is named by its metadata and counts only for a self-serve plan; a
-  price that has some other lookup key names nothing, whatever the metadata says.
+  the arranged Enterprise plan. A price from before payforge, with no lookup
+  key, grants nothing unless you list it in `LegacyPrices` (see
+  [accounts that already have objects](catalog.md#accounts-that-already-have-objects));
+  a price that has some other lookup key names nothing. A subscription's
+  metadata never names the plan.
 - With several lines or subscriptions, the highest tier wins; two plans in the
   same tier resolve by plan ID, so the order of the lines never matters.
 - **Events from a seller's own Stripe account are never acted on** for

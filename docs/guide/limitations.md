@@ -40,9 +40,10 @@ run yet**. See [Running the live test](#running-the-live-test).
 - **Fixed-price sale fees come from the spec**, not from the price Stripe holds.
 - **One-time sales being paid** and delayed payment methods are the host's to
   record; only refunds are applied.
-- **Keyless legacy prices** are trusted through the metadata on the platform's own
-  subscriptions. Anyone who can write that metadata can name a self-serve plan for
-  a subscription with a keyless price.
+- **Keyless legacy prices** grant nothing unless listed in
+  `Lifecycle.LegacyPrices`, each with the plan it is for; see
+  [the catalog](catalog.md#accounts-that-already-have-objects). There is no way
+  to have such a price named by metadata.
 - **In-memory ports** (`MemoryStore`, `MemorySink`) grow without bound and lose
   everything on restart. They are for tests.
 - **Stripe only.** The core is provider-neutral; there is no second adapter.

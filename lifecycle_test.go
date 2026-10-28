@@ -251,21 +251,42 @@ func TestLifecycleTheLaterPeriodBreaksATie(t *testing.T) {
 	}
 }
 
-func TestLifecycleLegacySubscriptionsNameTheirPlanInMetadata(t *testing.T) {
+func TestLifecycleKeylessPricesGrantOnlyWhenListed(t *testing.T) {
+	s := sub("sub_1", "active", "") // a price from before payforge: no lookup key, ID price_a
+	// The metadata names a better plan than the price is for; it is never trusted.
+	s.Metadata = map[string]string{"myapp_plan": "business", payforge.MetaPlan: "business"}
+
+	// Off by default: a keyless price grants nothing, whatever the metadata says.
 	r := newRig(t)
-	r.l.LegacyPrefixes = []string{"myapp"}
-	s := sub("sub_1", "active", "") // a price from before payforge: no lookup key
-	s.Metadata = map[string]string{"myapp_plan": "plus"}
 	r.reader.subs = []payforge.SubscriptionState{s}
-	res := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s))
-	if e := res.Entitlement; e == nil || e.Plan != "plus" || !e.Granted {
-		t.Fatalf("entitlement = %+v", e)
+	if e := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s)).Entitlement; e == nil || e.Granted {
+		t.Fatalf("unlisted keyless price granted: %+v", e)
 	}
-	// Without the prefix configured the metadata means nothing.
-	r2 := newRig(t)
-	r2.reader.subs = []payforge.SubscriptionState{s}
-	if e := r2.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s)).Entitlement; e == nil || e.Granted {
-		t.Fatalf("unconfigured: %+v", e)
+
+	// Listed, it grants the plan the host named for it, not the metadata's.
+	r = newRig(t)
+	r.l.LegacyPrices = map[string]string{"price_a": "plus"}
+	r.reader.subs = []payforge.SubscriptionState{s}
+	if e := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s)).Entitlement; e == nil || e.Plan != "plus" || !e.Granted {
+		t.Fatalf("listed keyless price: %+v", e)
+	}
+
+	// Another keyless price is not covered by the listing.
+	other := s
+	other.Items = []payforge.SubscriptionItem{{PriceID: "price_other"}}
+	r = newRig(t)
+	r.l.LegacyPrices = map[string]string{"price_a": "plus"}
+	r.reader.subs = []payforge.SubscriptionState{other}
+	if e := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, other)).Entitlement; e == nil || e.Granted {
+		t.Fatalf("another keyless price granted: %+v", e)
+	}
+
+	// A listing that names a plan the spec does not have grants nothing.
+	r = newRig(t)
+	r.l.LegacyPrices = map[string]string{"price_a": "platinum"}
+	r.reader.subs = []payforge.SubscriptionState{s}
+	if e := r.handle(t, subEvent("evt_1", payforge.EventSubscriptionUpdated, s)).Entitlement; e == nil || e.Granted {
+		t.Fatalf("unknown listed plan granted: %+v", e)
 	}
 }
 

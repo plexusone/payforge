@@ -214,7 +214,7 @@ type SubscriptionReader interface {     // the Stripe client implements it
 
 type Lifecycle struct {
     Spec *pricingspec.Spec; Store Store; Sink EntitlementSink
-    Provider SubscriptionReader; LegacyPrefixes []string
+    Provider SubscriptionReader; LegacyPrices map[string]string
 }
 
 func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
@@ -240,9 +240,9 @@ func (l *Lifecycle) Handle(ctx context.Context, ev Event) (Result, error)
 - **Only a price the spec has can grant.** A line grants through its lookup key
   only if the key names this app, a plan of the spec and an interval that plan
   has a price for. A price made by hand, another app's price, an arranged plan or
-  a free plan resolves to nothing. A price from before payforge with no key is
-  named by the subscription's metadata, and counts only for a self-serve plan
-  with prices. With several lines the highest plan wins.
+  a free plan resolves to nothing. A price from before payforge with no key
+  grants only when the host lists it in `LegacyPrices`, for the plan listed
+  there; metadata never names the plan. With several lines the highest plan wins.
 - `Entitlement` carries the plan the account should be on (the default plan when
   nothing grants), whether it is granted, the subscribed plan and its status, the
   period end as information, the subscription and customer, an `Origin` and the

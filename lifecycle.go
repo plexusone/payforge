@@ -64,9 +64,13 @@ type Lifecycle struct {
 	// instead of trusting the event's, for the same reason as Provider. Set it
 	// in production.
 	Accounts AccountReader
-	// LegacyPrefixes are host metadata prefixes read as aliases for the subject
-	// and plan, as in the webhook reader.
-	LegacyPrefixes []string
+	// LegacyPrices maps the ID of a price made before payforge, which has no
+	// lookup key, to the plan it grants. It is empty by default, and then a price
+	// without a lookup key never grants. Only the prices listed here grant, and
+	// only the plan named here: a subscription's metadata is never trusted to name
+	// the plan, because anyone who can edit it could name a better one. A plan the
+	// spec does not have grants nothing.
+	LegacyPrices map[string]string
 }
 
 // Handle processes one event. It returns an error only when something failed that
@@ -220,13 +224,11 @@ func (l *Lifecycle) entitlement(subject string, ev Event, subs []SubscriptionSta
 
 // planOf resolves a subscription to a plan of the spec. A price's lookup key
 // names the plan and interval for a price payforge synced, and counts only if
-// the spec has that price. A price without a key, from before payforge, is named
-// by the subscription's metadata, and counts only for a self-serve plan. A key for
-// another app, a plan or interval the spec does not have, any other key, or an
-// arranged plan resolves to nothing, so a price made by hand with a key can never
-// grant. A keyless price is trusted as far as the metadata on the platform's own
-// subscriptions is, which is why events from connected accounts never reach here. With several
-// lines the highest plan wins.
+// the spec has that price. A price without a key, from before payforge, counts
+// only when the host listed it in LegacyPrices, for the plan listed there. A key
+// for another app, a plan or interval the spec does not have, any other key, or
+// an unlisted keyless price resolves to nothing, so a price made by hand can
+// never grant. With several lines the highest plan wins.
 func (l *Lifecycle) planOf(s SubscriptionState) (pricingspec.Plan, bool) {
 	var best pricingspec.Plan
 	bestRank, found := 0, false
@@ -243,11 +245,11 @@ func (l *Lifecycle) planOf(s SubscriptionState) (pricingspec.Plan, bool) {
 			}
 			continue
 		}
-		if it.LookupKey != "" {
+		if it.LookupKey != "" || it.PriceID == "" {
 			continue // a price with a key of its own that is not ours names nothing
 		}
-		if id := MetadataPlan(s.Metadata, l.LegacyPrefixes); id != "" {
-			if p, has := l.Spec.Plan(id); has && p.SelfServe && len(p.Prices) > 0 {
+		if id, listed := l.LegacyPrices[it.PriceID]; listed {
+			if p, has := l.Spec.Plan(id); has {
 				consider(p)
 			}
 		}
