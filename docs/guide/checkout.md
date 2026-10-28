@@ -24,8 +24,9 @@ calls in a row.
 Success, cancel, return and refresh URLs must be `https` (or `http` for
 `localhost`), and may not carry a user name or password. **Set
 `AllowedURLHosts` to your own hostnames**: a URL that names any other host is
-refused with `ErrInvalidURL`, and with the list empty every URL except one on
-`localhost` is refused. Otherwise a URL built from anything a user sent could
+refused with `ErrInvalidURL`. `localhost`, `127.0.0.1` and `::1` are always
+accepted, even when the list does not name them, so with the list empty every
+URL except one on those hosts is refused. Otherwise a URL built from anything a user sent could
 send a buyer through a genuine Stripe checkout to a page of an attacker's
 choosing, holding the session ID. Entries are bare hostnames, compared without
 case; a scheme, port or wildcard is refused when the client is made. A client

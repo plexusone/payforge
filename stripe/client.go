@@ -27,9 +27,10 @@ type Config struct {
 	// AllowedURLHosts are the hosts the success, cancel, refresh and return URLs
 	// may name, so a URL taken from a request cannot send a buyer from Stripe to a
 	// site of an attacker's choosing. Set it to your own hostnames. It is required
-	// for checkout, the portal and onboarding links: with it empty, every URL but
-	// one on localhost is refused. A client that only syncs the catalog may leave
-	// it empty. A URL must also be https, or http only for localhost, and may not
+	// for checkout, the portal and onboarding links. localhost, 127.0.0.1 and ::1
+	// are always accepted, even when the list does not name them, so with it
+	// empty every URL but one on those hosts is refused. A client that only syncs
+	// the catalog may leave it empty. A URL must also be https, or http only for localhost, and may not
 	// carry a user name or password.
 	AllowedURLHosts []string
 	// Locker, when set, is held per subject around a plan checkout, under the
