@@ -111,7 +111,7 @@ func TestURLsAreHttpsUnlessLocalAndCanBeLimitedToHosts(t *testing.T) {
 		_, err := c.CheckoutPlan(ctx, in)
 		return err
 	}
-	for _, ok := range []string{"https://app.example.com/b", "http://localhost:3000/b", "http://127.0.0.1/b"} {
+	for _, ok := range []string{"https://app.example.com/b", "http://localhost:3000/b", "http://auth.localhost:8080/b", "http://127.0.0.1/b"} {
 		if err := at(open, ok); err != nil {
 			t.Errorf("%s: %v", ok, err)
 		}
@@ -370,7 +370,7 @@ func TestALiveKeyNeverRedirectsToLoopback(t *testing.T) {
 	spec := load(t, "subscription-tool.json")
 	const liveKey = "sk_live_example"
 
-	for _, h := range []string{"localhost", "127.0.0.1"} {
+	for _, h := range []string{"localhost", "app.localhost", "127.0.0.1"} {
 		if _, err := stripe.New(spec, stripe.Config{SecretKey: liveKey, APIURL: srv.URL, AllowedURLHosts: []string{"app.example.com", h}}); err == nil {
 			t.Errorf("a live key with %q allowed was accepted", h)
 		}
@@ -383,7 +383,7 @@ func TestALiveKeyNeverRedirectsToLoopback(t *testing.T) {
 	if live.Mode() != stripe.ModeLive {
 		t.Fatalf("mode = %q, want live", live.Mode())
 	}
-	for _, bad := range []string{"http://localhost:3000/b", "https://localhost/b", "http://127.0.0.1/b", "http://[::1]:8080/b"} {
+	for _, bad := range []string{"http://localhost:3000/b", "https://localhost/b", "http://app.localhost:8080/b", "http://127.0.0.1/b", "http://[::1]:8080/b"} {
 		in := planIn("plus")
 		in.SuccessURL = bad
 		if _, err := live.CheckoutPlan(ctx, in); !errors.Is(err, payforge.ErrInvalidURL) {

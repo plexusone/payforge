@@ -31,8 +31,9 @@ type Config struct {
 	// catalog may leave it empty. A URL must be https and may not carry a user
 	// name or password.
 	//
-	// With a test-mode key, localhost, 127.0.0.1 and ::1 are also accepted, over
-	// http too, even when the list does not name them, for local development.
+	// With a test-mode key, localhost and names under it (app.localhost),
+	// 127.0.0.1 and ::1 are also accepted, over http too, even when the list does
+	// not name them, for local development.
 	// With a live key they are never accepted: New refuses a list that names
 	// one, and a URL on one is refused, since a live checkout that returns the
 	// buyer to their own machine is always a misconfiguration.
@@ -159,9 +160,10 @@ func (c *Client) checkURL(raw string) error {
 	}
 }
 
-// isLoopback reports whether host is localhost or a loopback address.
+// isLoopback reports whether host is localhost, a name under it, which RFC 6761
+// reserves for the loopback interface, or a loopback address.
 func isLoopback(host string) bool {
-	return host == "localhost" || host == "127.0.0.1" || host == "::1"
+	return host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "127.0.0.1" || host == "::1"
 }
 
 // withSessionID appends the placeholder Stripe replaces with the checkout
