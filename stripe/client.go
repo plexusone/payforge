@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"strings"
@@ -31,8 +32,8 @@ type Config struct {
 	// catalog may leave it empty. A URL must be https and may not carry a user
 	// name or password.
 	//
-	// With a test-mode key, localhost and names under it (app.localhost),
-	// 127.0.0.1 and ::1 are also accepted, over http too, even when the list does
+	// With a test-mode key, localhost and names under it (app.localhost) and
+	// loopback addresses (127.0.0.0/8 and ::1) are also accepted, over http too, even when the list does
 	// not name them, for local development.
 	// With a live key they are never accepted: New refuses a list that names
 	// one, and a URL on one is refused, since a live checkout that returns the
@@ -87,7 +88,7 @@ func New(spec *pricingspec.Spec, cfg Config) (*Client, error) {
 	}
 	hosts := map[string]bool{}
 	for _, h := range cfg.AllowedURLHosts {
-		h = strings.ToLower(strings.TrimSpace(h))
+		h = canonicalHost(strings.TrimSpace(h))
 		if h == "" || strings.ContainsAny(h, "/:@*") {
 			return nil, fmt.Errorf("stripe: AllowedURLHosts entry %q is not a hostname", h)
 		}
@@ -136,7 +137,7 @@ func (c *Client) checkURL(raw string) error {
 	if err != nil || u.Host == "" || u.User != nil {
 		return bad()
 	}
-	host := strings.ToLower(u.Hostname())
+	host := canonicalHost(u.Hostname())
 	local := isLoopback(host)
 	if local && c.mode != ModeTest {
 		return fmt.Errorf("%w: host %q is loopback, which a live key never redirects to", payforge.ErrInvalidURL, host)
@@ -160,10 +161,21 @@ func (c *Client) checkURL(raw string) error {
 	}
 }
 
-// isLoopback reports whether host is localhost, a name under it, which RFC 6761
-// reserves for the loopback interface, or a loopback address.
+// canonicalHost lowercases host and drops a trailing root dot, so app.localhost.
+// and app.localhost are the same host.
+func canonicalHost(host string) string {
+	return strings.TrimSuffix(strings.ToLower(host), ".")
+}
+
+// isLoopback reports whether host, as canonicalHost returns it, is localhost, a
+// name under it, which RFC 6761 reserves for the loopback interface, or a
+// loopback address (127.0.0.0/8 or ::1).
 func isLoopback(host string) bool {
-	return host == "localhost" || strings.HasSuffix(host, ".localhost") || host == "127.0.0.1" || host == "::1"
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	a, err := netip.ParseAddr(host)
+	return err == nil && a.IsLoopback()
 }
 
 // withSessionID appends the placeholder Stripe replaces with the checkout
