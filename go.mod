@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/grokify/oscompat v0.13.0
-	github.com/plexusone/systemspec-pricingpackaging v0.1.0
+	github.com/plexusone/systemspec-pricingpackaging v0.2.0
 	github.com/stripe/stripe-go/v87 v87.1.0
 )
 
