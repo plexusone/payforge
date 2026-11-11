@@ -139,7 +139,7 @@ can share one account and still be told apart.
 
 ## Releases
 
-[v0.1.0](docs/releases/v0.1.0.md) · [Changelog](CHANGELOG.md)
+[v0.1.1](docs/releases/v0.1.1.md) · [v0.1.0](docs/releases/v0.1.0.md) · [Changelog](CHANGELOG.md)
 
 ## Development
 
