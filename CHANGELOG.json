@@ -10,6 +10,44 @@
   ],
   "releases": [
     {
+      "version": "v0.1.1",
+      "date": "2026-11-11",
+      "highlights": [
+        {
+          "description": "Names under `localhost`, such as `app.localhost`, are loopback hosts: a test-mode key accepts them over http without listing them, and a live key refuses them",
+          "commit": "611c561"
+        }
+      ],
+      "fixed": [
+        {
+          "description": "Test-mode checkout and portal URLs on names under `localhost`, such as `http://auth.localhost:8080/`, are accepted without being listed in `AllowedURLHosts`; a live key refuses them in the list and in a URL",
+          "commit": "611c561"
+        },
+        {
+          "description": "A host with a trailing root dot, such as `app.localhost.`, is the same host as without it, in `AllowedURLHosts` and in URLs, so a live configuration can no longer list a loopback name that way",
+          "commit": "ee06aee"
+        },
+        {
+          "description": "Every loopback address, 127.0.0.0/8 and `::1`, counts as loopback, so a live key also refuses `127.0.0.2` and the like",
+          "commit": "ee06aee"
+        }
+      ],
+      "dependencies": [
+        {
+          "description": "`systemspec-pricingpackaging` v0.2.0, which adds internal plans; checkout refuses them as it does every plan that is not self-serve, and they have no prices to sync",
+          "commit": "f19d0a2"
+        },
+        {
+          "description": "`stripe-go` v87.1.0",
+          "commit": "aa1611c"
+        },
+        {
+          "description": "`oscompat` v0.13.0",
+          "commit": "c4bb55c"
+        }
+      ]
+    },
+    {
       "version": "v0.1.0",
       "date": "2026-10-28",
       "highlights": [
