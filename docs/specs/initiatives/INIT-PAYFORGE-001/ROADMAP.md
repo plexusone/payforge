@@ -83,3 +83,17 @@ v0.1.0 ships ahead of `RMI-PAYFORGE-018` (adoption by the source product) and
 review of the core and adapter is done and its findings are fixed, and the
 release notes list the live test as not yet run. Both items, and with them
 `RMI-PAYFORGE-022`, are completed in a later release.
+
+## Phase 6 — Direct charges
+
+**Theme:** A seller can be the merchant of record: sales are direct charges on the seller's connected account, with the platform's fee taken as an application fee, and the seller, not the platform, bearing refunds, disputes and negative balances.
+
+- [ ] `RMI-PAYFORGE-023` Charge model setting, destination or direct, with destination the default so existing hosts are unchanged; design recorded in the TRD
+- [ ] `RMI-PAYFORGE-024` Accounts for direct charges: Express-dashboard accounts created with controller settings `fees.payer=account`, `losses.payments=stripe` and `requirement_collection=stripe`, verified against Stripe's test mode for the pinned API version; Stripe-owned losses need the platform to meet Stripe's Managed Risk requirements, and the account's idempotency key differs from a destination account's so neither is returned for the other
+  - Depends on: `RMI-PAYFORGE-023`
+- [ ] `RMI-PAYFORGE-025` Direct-charge checkout: the session, customer and line items on the connected account (`Stripe-Account`), with an application fee and no transfer
+  - Depends on: `RMI-PAYFORGE-024`
+- [ ] `RMI-PAYFORGE-026` Connect webhooks: a separate endpoint and signing secret for connected-account events, the account a sale was charged on recorded with it and an event applied only when its account matches (empty for a destination charge), and the account ID on `ChargeDispute` and refund results
+  - Depends on: `RMI-PAYFORGE-025`
+- [ ] `RMI-PAYFORGE-027` Guide and tests for direct charges, including a disputed test charge and that the application fee is not returned on a dispute
+  - Depends on: `RMI-PAYFORGE-026`
