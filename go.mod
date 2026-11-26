@@ -3,7 +3,7 @@ module github.com/plexusone/payforge
 go 1.26
 
 require (
-	github.com/grokify/oscompat v0.13.0
+	github.com/grokify/oscompat v0.14.0
 	github.com/plexusone/systemspec-pricingpackaging v0.2.0
 	github.com/stripe/stripe-go/v87 v87.2.0
 )
