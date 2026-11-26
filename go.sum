@@ -1,7 +1,7 @@
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/grokify/oscompat v0.13.0 h1:WVqStATaUe3cBj3Kep0htGBIGd8/X+jvnTuRXcUNNPg=
-github.com/grokify/oscompat v0.13.0/go.mod h1:Ekex/WzHaA39LNt5xbeQRASo74NEXAIqBlqdvNF2oUM=
+github.com/grokify/oscompat v0.14.0 h1:ca6TJTPn7xTRlBE+OXsAY+aoaDitP7cpp4jm23TaGf8=
+github.com/grokify/oscompat v0.14.0/go.mod h1:Ekex/WzHaA39LNt5xbeQRASo74NEXAIqBlqdvNF2oUM=
 github.com/plexusone/systemspec-pricingpackaging v0.2.0 h1:qyO/iTgc6mW6DK4FXpAq+lAKgqfa0yFopp7Xkpn9pf0=
 github.com/plexusone/systemspec-pricingpackaging v0.2.0/go.mod h1:6dO0OOnGQrCLuhlRrw/DiQG7rqbr4xf6B8YeLaJuwbE=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
